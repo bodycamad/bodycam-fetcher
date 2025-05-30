@@ -1,17 +1,16 @@
 name: daily-bodycam-fetch
-
 permissions:
-  contents: write
-  
+  contents: write         # 커밋 방법 그대로 쓰려면 유지
+
 on:
   schedule:
-    - cron: '0 17 * * *'    # 매일 한국시간 02:00 (UTC 17:00)
-  workflow_dispatch:        # 수동 실행 버튼
+    - cron: '0 17 * * *'
+  workflow_dispatch:
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 120          # 영상 다운로드 시간 대비 여유 ↑
 
     steps:
       - uses: actions/checkout@v4
@@ -21,18 +20,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install deps
         run: pip install yt-dlp google-api-python-client
 
       - name: Run fetch script
         env:
           YT_API_KEY: ${{ secrets.YT_API_KEY }}
         run: python daily_fetch.py
-      - name: Commit results
-        if: success()           # 스크립트가 성공했을 때만
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "actions@users.noreply.github.com"
-          git add data/** || true
-          git commit -m "auto: daily fetch" || echo "nothing to commit"
-          git push
+
+      # ───────── 선택 1) 파일을 저장소(Git LFS)로 커밋
+      # (1 GB 이상 레포 용량 커질 수 있음·권장 X)
+      # - name: Commit results …
+
+      # ───────── 선택 2) 실행마다 ZIP 아티팩트로 업로드 (권장)
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bodycam-bundle-${{ github.run_number }}
+          path: |
+            data/**/*.mp4
+            data/**/*.jpg
+            data/**/*.json
+            data/**/*.description
+          retention-days: 14   # 14일 뒤 자동 삭제
