@@ -1,2 +1,9 @@
 UCpeNXxzH1oRTWK9JOap1PyQ   # Dallas Police Department
-
+UCQKgBZFuqIfUHlvroG24XSg   # Salt Lake City Police Department
+UC3-Sd7y6-2eKzSLfS3e-Xdw >> Critical Incident   # San Antonio Police Department
+UCrWfcbyAnbNbhp19VjI2kIQ >> Officer Involved Shooting   # Milwaukee Police Department
+UCXNsZVK6rs6smjQFoAvn-tw >> Officer Involved Shooting   # Portland Police Department
+UCYfSYwxMuScjXOUcBE6d5AQ   # San Jose Police Department Community Briefings
+UCLoFeIaIBe4ZjEpy_pU1reA >> camera, audio   # Austin Police Department
+UCyem5SCjQd9mboYdrRyMT9w >> bwc   # Minneapolis Police Department
+UCYmo67-J81Ntn3PsF8h1HkQ >> Critical Incident   # Anchorage Police Department
