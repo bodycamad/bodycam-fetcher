@@ -89,12 +89,24 @@ def fetch_and_save(video_id: str, folder: pathlib.Path):
 for cid in channel_ids:
     out_dir = pathlib.Path("data") / cid
     out_dir.mkdir(parents=True, exist_ok=True)
-    for vid in video_ids_from_channel(cid):
-        fetch_and_save(vid, out_dir)
+
+    vids = video_ids_from_channel(cid)          # ← 먼저 리스트를 받아두고
+    if not vids:
+        print(f"[CHANNEL] {cid}: No new videos")      # ← (1) 0 개일 때
+    else:
+        for vid in vids:
+            fetch_and_save(vid, out_dir)
+        print(f"[CHANNEL] {cid}: {len(vids)} videos downloaded")  # ← (2) 1+ 개
 
 # ───────────────── 6. 재생목록 전용 처리
 for plid in playlist_ids:
     out_dir = pathlib.Path("data") / plid
     out_dir.mkdir(parents=True, exist_ok=True)
-    for vid in video_ids_from_playlist(plid):
-        fetch_and_save(vid, out_dir)
+
+    vids = video_ids_from_playlist(plid)
+    if not vids:
+        print(f"[PLAYLIST] {plid}: No new videos")     # ← (3) 동일 로직
+    else:
+        for vid in vids:
+            fetch_and_save(vid, out_dir)
+        print(f"[PLAYLIST] {plid}: {len(vids)} videos downloaded")
