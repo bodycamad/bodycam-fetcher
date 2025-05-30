@@ -1,0 +1,27 @@
+name: daily-bodycam-fetch
+
+on:
+  schedule:
+    - cron: '0 17 * * *'    # 매일 한국시간 02:00 (UTC 17:00)
+  workflow_dispatch:        # 수동 실행 버튼
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install yt-dlp google-api-python-client
+
+      - name: Run fetch script
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+        run: python daily_fetch.py
