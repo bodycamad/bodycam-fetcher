@@ -1,66 +1,84 @@
 """
-daily_fetch.py
-────────────────────────────────────────────────────────
-• playlists.txt에 적어 둔 YouTube 재생목록(PL…)마다
-  ─ 오늘(UTC 기준) 새로 추가된 영상의 메타데이터와 설명란만 저장
-• 필요 라이브러리: google-api-python-client, yt-dlp
-────────────────────────────────────────────────────────
+혼합 수집 스크립트
+───────────────────────────────────────────────
+• channels.txt  → 채널 전체 업로드(오늘 업로드분)
+• playlists.txt → 특정 재생목록(오늘 추가분)
+───────────────────────────────────────────────
 """
 
-import os
-import datetime
-import pathlib
-import subprocess
+import os, datetime, pathlib, subprocess
 from googleapiclient.discovery import build
 
-# ──────────────────────── 1. 환경 변수로부터 API 키 가져오기
+# ───────────────── 1. 환경 변수에서 API 키 읽기
 API_KEY = os.getenv("YT_API_KEY")
 if not API_KEY:
-    raise EnvironmentError("환경변수 YT_API_KEY 가 설정돼 있지 않습니다.")
+    raise EnvironmentError("YT_API_KEY secret가 설정되지 않았습니다.")
 
-# ──────────────────────── 2. YouTube API 클라이언트 초기화
 yt = build("youtube", "v3", developerKey=API_KEY, cache_discovery=False)
+today_iso = datetime.datetime.utcnow().date().isoformat()        # 'YYYY-MM-DD'
+published_after = today_iso + "T00:00:00Z"                       # 채널 검색용
 
-# 오늘 날짜(UTC) 문자열 : 'YYYY-MM-DD'
-today_str = datetime.datetime.utcnow().date().isoformat()
+# ───────────────── 2. 오늘 업로드 영상 id 얻기 함수 (채널·재생목록)
+def video_ids_from_channel(cid: str) -> list[str]:
+    """해당 채널에서 오늘 업로드된 videoId 리스트"""
+    res = yt.search().list(
+        part="id",
+        channelId=cid,
+        order="date",
+        publishedAfter=published_after,
+        type="video",
+        maxResults=10
+    ).execute()
+    return [i["id"]["videoId"] for i in res.get("items", [])]
 
-# ──────────────────────── 3. 오늘 추가된 videoId 추출 함수
-def today_video_ids_from_playlist(pl_id: str) -> list[str]:
-    """지정 재생목록(playlistId)에서 *오늘* 새로 추가된 videoId 리스트 반환"""
-    vids: list[str] = []
+def video_ids_from_playlist(plid: str) -> list[str]:
+    """재생목록에 오늘 추가된 videoId 리스트"""
+    vids = []
     req = yt.playlistItems().list(
         part="contentDetails",
-        playlistId=pl_id,
-        maxResults=50,          # 1회 최대 50개
+        playlistId=plid,
+        maxResults=50
     )
     while req:
         res = req.execute()
         for item in res["items"]:
-            # videoPublishedAt → 'YYYY-MM-DDTHH:MM:SSZ'
-            published_date = item["contentDetails"]["videoPublishedAt"][:10]
-            if published_date == today_str:
+            if item["contentDetails"]["videoPublishedAt"][:10] == today_iso:
                 vids.append(item["contentDetails"]["videoId"])
         req = yt.playlistItems().list_next(req, res)
     return vids
 
-# ──────────────────────── 4. playlists.txt 읽어 루프 실행
-with open("playlists.txt", encoding="utf-8") as fp:
-    playlist_ids = [line.split("#")[0].strip() for line in fp if line.strip()]
+# ───────────────── 3. 두 텍스트 파일에서 ID 읽기
+def read_id_file(path: str):
+    if not pathlib.Path(path).exists():
+        return []
+    with open(path, encoding="utf-8") as fp:
+        return [line.split("#")[0].strip() for line in fp if line.strip()]
 
-for pl_id in playlist_ids:
-    out_dir = pathlib.Path("data") / pl_id
+channel_ids   = read_id_file("channels.txt")
+playlist_ids  = read_id_file("playlists.txt")
+
+# ───────────────── 4. 공통 다운로드 함수
+def fetch_and_save(video_id: str, folder: pathlib.Path):
+    subprocess.run([
+        "yt-dlp",
+        "--skip-download",
+        "--write-info-json",
+        "--write-description",
+        "--no-warnings",
+        "-o", str(folder / "%(upload_date)s_%(id)s"),
+        f"https://www.youtube.com/watch?v={video_id}"
+    ], check=True)
+
+# ───────────────── 5. 채널 전체 업로드 처리
+for cid in channel_ids:
+    out_dir = pathlib.Path("data") / cid
     out_dir.mkdir(parents=True, exist_ok=True)
+    for vid in video_ids_from_channel(cid):
+        fetch_and_save(vid, out_dir)
 
-    for vid in today_video_ids_from_playlist(pl_id):
-        subprocess.run(
-            [
-                "yt-dlp",
-                "--skip-download",
-                "--write-info-json",
-                "--write-description",
-                "--no-warnings",
-                "-o", str(out_dir / "%(upload_date)s_%(id)s"),
-                f"https://www.youtube.com/watch?v={vid}",
-            ],
-            check=True,
-        )
+# ───────────────── 6. 재생목록 전용 처리
+for plid in playlist_ids:
+    out_dir = pathlib.Path("data") / plid
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for vid in video_ids_from_playlist(plid):
+        fetch_and_save(vid, out_dir)
