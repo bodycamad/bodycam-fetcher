@@ -32,17 +32,19 @@ def video_ids_from_channel(cid: str) -> list[str]:
     return [i["id"]["videoId"] for i in res.get("items", [])]
 
 def video_ids_from_playlist(plid: str) -> list[str]:
-    """재생목록에 오늘 추가된 videoId 리스트"""
+    """재생목록에 오늘 추가된 videoId 리스트 (videoPublishedAt이 누락된 항목 대비)"""
     vids = []
     req = yt.playlistItems().list(
-        part="contentDetails",
+        part="contentDetails,snippet",
         playlistId=plid,
         maxResults=50
     )
     while req:
         res = req.execute()
         for item in res["items"]:
-            if item["contentDetails"]["videoPublishedAt"][:10] == today_iso:
+            dt = item["contentDetails"].get("videoPublishedAt") \
+                 or item["snippet"]["publishedAt"]
+            if dt[:10] == today_iso:            # 'YYYY-MM-DD'
                 vids.append(item["contentDetails"]["videoId"])
         req = yt.playlistItems().list_next(req, res)
     return vids
