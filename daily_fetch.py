@@ -59,16 +59,30 @@ def read_id_file(path: str):
 channel_ids   = read_id_file("channels.txt")
 playlist_ids  = read_id_file("playlists.txt")
 
-# ───────────────── 4. 공통 다운로드 함수
+# ───────── 4. 공통 다운로드 함수 (MP4 + 썸네일 + 중복 방지)
 def fetch_and_save(video_id: str, folder: pathlib.Path):
     subprocess.run([
         "yt-dlp",
-        "--skip-download",
-        "--write-info-json",
-        "--write-description",
-        "--no-warnings",
-        "-o", str(folder / "%(upload_date)s_%(id)s"),
-        f"https://www.youtube.com/watch?v={video_id}"
+        f"https://www.youtube.com/watch?v={video_id}",
+
+        # a) 메타데이터·설명
+        "--write-info-json", "--write-description",
+
+        # b) 본영상 (mp4 한 파일로)
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
+        "--merge-output-format", "mp4",
+
+        # c) 대표 썸네일(YouTube 기본 1280×720)
+        "--write-thumbnail",               # .jpg 생성
+        "--convert-thumbnails", "jpg",     # webp → jpg 변환
+
+        # d) 중복 방지
+        "--download-archive", str(folder / "downloaded.txt"),
+
+        # e) 출력 템플릿
+        "-o", str(folder / "%(upload_date)s_%(id)s.%(ext)s"),
+
+        "--no-warnings"
     ], check=True)
 
 # ───────────────── 5. 채널 전체 업로드 처리
