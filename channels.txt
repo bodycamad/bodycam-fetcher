@@ -13,3 +13,4 @@ UCmzeK2lzaBSAQQr2Q0hPArw >> Division   # San Diego Police Department
 UC19Ipd-a76SABWau32gb-GA >> bwc   # Fairfax County Police Department
 UCMjsQu41fpYJGNmyJp2R-0g >> Critical Incident   # San Bernardino Sheriff's Office
 UCbQjhc6o-sKhDH2RsUJt7Bw >> Officer-Involved Shooting, Body Worn Camera, Footage   # Nashville Police Department
+UCVOD46fxilD7Az4lJilQ-3w >> Body Camera, Body Worn Camera, Officer-Involved Shooting, Officer Involved, body cam, OIS   # louisville police department
