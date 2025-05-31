@@ -1,113 +1,141 @@
 """
-혼합 수집 스크립트 (48 h · Private/Deleted 제외 · 키워드 필터 · 저쿼터)
+혼합 수집 스크립트 · 48 h · Private/Deleted 제외 · 키워드 필터 · 저쿼터
+───────────────────────────────────────────────────────────────────────
+• channels.txt  ─  UCxxxxxxxxxxxxxxxxxxxxxxxx  [>> keyword1, keyword2 …]
+    ↳ UC… → UU…(업로드 재생목록) 로 변환해 playlistItems(1 unit) 호출
+• playlists.txt ─  재생목록 ID 한 줄씩
+───────────────────────────────────────────────────────────────────────
 """
 
-import os, datetime, pathlib, subprocess
+import os
+import sys
+import datetime
+import pathlib
+import subprocess
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
-# ─── 1. API 키
+# ───── 1. API 키 ────────────────────────────────────────────────
 API_KEY = os.getenv("YT_API_KEY")
 if not API_KEY:
     raise EnvironmentError("YT_API_KEY secret 가 없습니다.")
 yt = build("youtube", "v3", developerKey=API_KEY, cache_discovery=False)
 
-# ─── 2. 날짜 (UTC 오늘 + 전날 00 Z 이후 48 h)
+# ───── 2. 날짜 (UTC 오늘 + 전날 00 Z 이후 48 h) ─────────────────
 today      = datetime.datetime.utcnow().date()
 yesterday  = today - datetime.timedelta(days=1)
 today_iso  = today.isoformat()
 
-# ─── 3. helpers
+# ───── 3. 도우미 함수 ───────────────────────────────────────────
 def to_upload_playlist_id(cid: str) -> str:
+    """UC… → UU… (업로드 재생목록)  |  이미 UU… 면 그대로"""
     return "UU" + cid[2:] if cid.startswith("UC") and len(cid) == 24 else cid
 
 def parse_channels_file(path: str = "channels.txt"):
-    """
-    channels.txt → [(업로드 재생목록 ID, [키워드…]), …]
-
-    • 줄 형식:  UCxxxxxxxxxxxxxxxxxxxxxxxx >> keyword1, keyword2  # comment
-    • UC… → UU… 로 자동 변환 (이미 UU… 쓰면 그대로)
-    • '#' 이후 주석·공백은 모두 제거
-    • 길이 24자가 아니면 건너뜀
-    """
+    """channels.txt → [(업로드 PLID, [keywords…]), …]"""
     res = []
     if not pathlib.Path(path).exists():
         return res
-
     with open(path, encoding="utf-8") as fp:
         for raw in fp:
-            raw = raw.split("#", 1)[0].strip()          # 주석 제거
+            raw = raw.split("#", 1)[0].strip()           # 주석 제거
             if not raw:
                 continue
-
-            # 키워드 분리
             if ">>" in raw:
                 cid_part, kw_part = raw.split(">>", 1)
                 keywords = [k.strip().lower() for k in kw_part.split(",") if k.strip()]
             else:
                 cid_part, keywords = raw, []
-
-            pl_id = to_upload_playlist_id(cid_part.strip())[:24]  # 24자 이내로 자르기
+            pl_id = to_upload_playlist_id(cid_part.strip())[:24]  # 24자 이내
             if len(pl_id) != 24:
                 print("[WARN] skipped invalid ID:", pl_id)
                 continue
-
             res.append((pl_id, keywords))
 
-    # ── DEBUG: 파싱 결과 확인 ────────────────────────────────
+    # ── DEBUG: 파싱 결과 ───────────────────────────────────────
     for cid, kw in res:
         print("[DEBUG] parsed:", cid, "keywords:", kw)
-
     return res
 
 def read_playlists(path="playlists.txt"):
     if not pathlib.Path(path).exists():
         return []
     with open(path, encoding="utf-8") as fp:
-        return [l.split("#",1)[0].strip() for l in fp if l.strip()]
+        return [l.split("#", 1)[0].strip() for l in fp if l.strip()]
 
-# ─── 4. playlistItems → 오늘 영상
+# ───── 4. execute 래퍼 (쿼터 초과 시 우아한 종료) ───────────────
+def safe_execute(req):
+    try:
+        return req.execute()
+    except HttpError as e:
+        if e.resp.status == 403 and "quotaExceeded" in str(e):
+            print("[INFO] API quota exhausted for today — stopping early.")
+            sys.exit(0)          # 성공(✔) 상태로 워크플로 종료
+        raise                    # 다른 오류는 그대로 전파
+
+# ───── 5. playlistItems → 오늘 영상 목록 ───────────────────────
 def video_ids_from_playlist(pl_id: str):
-    vids, req = [], yt.playlistItems().list(
-        part="contentDetails,snippet", playlistId=pl_id, maxResults=50)
+    vids = []
+    req = yt.playlistItems().list(
+        part="contentDetails,snippet",
+        playlistId=pl_id,
+        maxResults=50
+    )
     while req:
-        res = req.execute()
+        res = safe_execute(req)
         for it in res.get("items", []):
             title = it["snippet"]["title"]
-            if title in ("Private video", "Deleted video"): continue
+            if title in ("Private video", "Deleted video"):
+                continue
             dt = it["contentDetails"].get("videoPublishedAt") or it["snippet"]["publishedAt"]
             if dt[:10] == today_iso:
                 vids.append((it["contentDetails"]["videoId"], title))
         req = yt.playlistItems().list_next(req, res)
     return vids
 
-# ─── 5. downloader
-def fetch_and_save(vid: str, out: pathlib.Path):
+# ───── 6. 다운로드 함수 ─────────────────────────────────────────
+def fetch_and_save(video_id: str, out_dir: pathlib.Path):
     cmd = [
-        "yt-dlp", f"https://www.youtube.com/watch?v={vid}",
+        "yt-dlp", f"https://www.youtube.com/watch?v={video_id}",
         "--write-info-json", "--write-description",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", "--merge-output-format", "mp4",
+        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
+        "--merge-output-format", "mp4",
         "--write-thumbnail", "--convert-thumbnails", "jpg",
-        "--download-archive", str(out / "downloaded.txt"),
-        "-o", str(out / "%(upload_date)s_%(id)s.%(ext)s"),
+        "--download-archive", str(out_dir / "downloaded.txt"),
+        "-o", str(out_dir / "%(upload_date)s_%(id)s.%(ext)s"),
         "--no-warnings", "--ignore-errors"
     ]
-    try: subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"[ERROR] yt-dlp failed for {vid}: {e.returncode}")
+        print(f"[ERROR] yt-dlp failed for {video_id}: {e.returncode}")
 
-# ─── 6. 채널(업로드 재생목록) 처리
+# ───── 7. 채널(업로드 재생목록) 처리 ───────────────────────────
 channels = parse_channels_file()
 for pl_id, kw in channels:
-    out = pathlib.Path("data") / pl_id; out.mkdir(parents=True, exist_ok=True)
+    out = pathlib.Path("data") / pl_id
+    out.mkdir(parents=True, exist_ok=True)
+
     vids = video_ids_from_playlist(pl_id)
     if kw:
-        vids = [(v,t) for v,t in vids if any(k in t.lower() for k in kw)]
-    print(f"[CHANNEL] {pl_id}: {len(vids)} new" if vids else f"[CHANNEL] {pl_id}: No new videos")
-    for vid,_ in vids: fetch_and_save(vid, out)
+        vids = [(v, t) for v, t in vids if any(k in t.lower() for k in kw)]
 
-# ─── 7. playlists.txt 처리
+    if not vids:
+        print(f"[CHANNEL] {pl_id}: No new videos")
+    else:
+        for vid, _ in vids:
+            fetch_and_save(vid, out)
+        print(f"[CHANNEL] {pl_id}: {len(vids)} videos processed")
+
+# ───── 8. playlists.txt 처리 ──────────────────────────────────
 for pl_id in read_playlists():
-    out = pathlib.Path("data") / pl_id; out.mkdir(parents=True, exist_ok=True)
+    out = pathlib.Path("data") / pl_id
+    out.mkdir(parents=True, exist_ok=True)
+
     vids = video_ids_from_playlist(pl_id)
-    print(f"[PLAYLIST] {pl_id}: {len(vids)} new" if vids else f"[PLAYLIST] {pl_id}: No new videos")
-    for vid,_ in vids: fetch_and_save(vid, out)
+    if not vids:
+        print(f"[PLAYLIST] {pl_id}: No new videos")
+    else:
+        for vid, _ in vids:
+            fetch_and_save(vid, out)
+        print(f"[PLAYLIST] {pl_id}: {len(vids)} videos processed")
