@@ -20,21 +20,43 @@ today_iso  = today.isoformat()
 def to_upload_playlist_id(cid: str) -> str:
     return "UU" + cid[2:] if cid.startswith("UC") and len(cid) == 24 else cid
 
-def parse_channels_file(path="channels.txt"):
+def parse_channels_file(path: str = "channels.txt"):
+    """
+    channels.txt → [(업로드 재생목록 ID, [키워드…]), …]
+
+    • 줄 형식:  UCxxxxxxxxxxxxxxxxxxxxxxxx >> keyword1, keyword2  # comment
+    • UC… → UU… 로 자동 변환 (이미 UU… 쓰면 그대로)
+    • '#' 이후 주석·공백은 모두 제거
+    • 길이 24자가 아니면 건너뜀
+    """
     res = []
     if not pathlib.Path(path).exists():
         return res
+
     with open(path, encoding="utf-8") as fp:
         for raw in fp:
-            raw = raw.split("#", 1)[0].strip()           # ← ★ 주석 제거
+            raw = raw.split("#", 1)[0].strip()          # 주석 제거
             if not raw:
                 continue
+
+            # 키워드 분리
             if ">>" in raw:
                 cid_part, kw_part = raw.split(">>", 1)
                 keywords = [k.strip().lower() for k in kw_part.split(",") if k.strip()]
             else:
                 cid_part, keywords = raw, []
-            res.append((to_upload_playlist_id(cid_part.strip()), keywords))
+
+            pl_id = to_upload_playlist_id(cid_part.strip())[:24]  # 24자 이내로 자르기
+            if len(pl_id) != 24:
+                print("[WARN] skipped invalid ID:", pl_id)
+                continue
+
+            res.append((pl_id, keywords))
+
+    # ── DEBUG: 파싱 결과 확인 ────────────────────────────────
+    for cid, kw in res:
+        print("[DEBUG] parsed:", cid, "keywords:", kw)
+
     return res
 
 def read_playlists(path="playlists.txt"):
