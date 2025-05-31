@@ -15,8 +15,10 @@ if not API_KEY:
     raise EnvironmentError("YT_API_KEY secret가 설정돼 있지 않습니다.")
 yt = build("youtube", "v3", developerKey=API_KEY, cache_discovery=False)
 
-today_iso = datetime.datetime.utcnow().date().isoformat()
-published_after = today_iso + "T00:00:00Z"
+# today_iso = datetime.datetime.utcnow().date().isoformat()
+yesterday = datetime.datetime.utcnow().date() - datetime.timedelta(days=1)
+published_after = yesterday.isoformat() + "T00:00:00Z"
+
 
 # ───── 2. 오늘 영상 추출 함수 (★ snippet 포함해 Title 필터)
 def video_ids_from_channel(cid: str):
