@@ -9,3 +9,4 @@ PLlz9aZOJamjasE80k8yiQKPf4PkUbeGgU # Riverside County Sheriff's Office -Critical
 PLN9rQo5toH5B7RFwrPfeoqb8PdoS2d6B6 # Jacksonville County Sheriff's Office -Critical Incident Briefing
 PLohsjpG0m4x3rXuDZROjjei2IC7KBiVnR # Indianapolis Police Department -Critical Incident Videos
 PLozd9nFy7J-8IPJQyiZutguYkD-m5_LP9 # Oklahoma City Police Department -OKCPD Community Incident Briefings
+PLVjdZvnYuTJISmvf02ezsTf6RsYTblWe6 # Fresno police department -Critical Incident Videos
