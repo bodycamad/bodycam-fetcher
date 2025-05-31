@@ -1,45 +1,44 @@
 name: daily-bodycam-fetch
+
 permissions:
-  contents: write         # 커밋 방법 그대로 쓰려면 유지
+  contents: write        # 필요하면 그대로 유지
 
 on:
   schedule:
-    - cron: '0 17 * * *'
-  workflow_dispatch:
+    - cron: '0 17 * * *'   # 매일 KST 02:00
+  workflow_dispatch:       # 수동 실행 버튼
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 120          # 영상 다운로드 시간 대비 여유 ↑
+    timeout-minutes: 120    # 영상 다운로드 시간 대비 여유
 
     steps:
+      # 1) 레포 체크아웃
       - uses: actions/checkout@v4
 
+      # 2) Python 3.11 설치
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      # 3) yt-dlp · Google API 클라이언트 설치
       - name: Install deps
         run: pip install yt-dlp google-api-python-client
 
+      # 4) 수집 스크립트 실행
       - name: Run fetch script
+        id: run_fetch                  # ← 나중에 outcome 확인용 ID
         env:
           YT_API_KEY: ${{ secrets.YT_API_KEY }}
         run: python daily_fetch.py
 
-      # ───────── 선택 1) 파일을 저장소(Git LFS)로 커밋
-      # (1 GB 이상 레포 용량 커질 수 있음·권장 X)
-      # - name: Commit results …
-
-      # ───────── 선택 2) 실행마다 ZIP 아티팩트로 업로드 (권장)
+      # 5) (선택) 결과 ZIP 업로드 ─ 파일이 있을 때만 실행
       - name: Upload artifact
+        if: success() && hashFiles('data/**/*') != ''
         uses: actions/upload-artifact@v4
         with:
           name: bodycam-bundle-${{ github.run_number }}
-          path: |
-            data/**/*.mp4
-            data/**/*.jpg
-            data/**/*.json
-            data/**/*.description
-          retention-days: 14   # 14일 뒤 자동 삭제
+          path: data/**/*
+          retention-days: 14          # 14일 후 자동 삭제
