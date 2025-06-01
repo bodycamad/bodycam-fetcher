@@ -21,10 +21,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # (A) artifact_name이 있으면 → 해당 이름으로만 다운로드
+      # ── (A) 디버깅용: 입력한 run_id에 진짜 아티팩트가 있는지 보여준다 ──
+      - name: Show artifacts in that run (for debugging)
+        run: |
+          gh api \
+            repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}/artifacts \
+            --paginate -q '.artifacts[] | "\(.name) (id:\(.id))"' \
+          || echo "::warning ::gh CLI가 없으면 무시해도 됩니다"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # ── (B) artifact_name이 주어졌으면, 해당 이름으로만 다운로드 ──
       - name: Download specific artifact
         if: ${{ inputs.artifact_name != '' }}
         uses: actions/download-artifact@v4
@@ -33,36 +42,37 @@ jobs:
           name: ${{ inputs.artifact_name }}
           path: ./downloaded_data
 
-      # (B) artifact_name이 빈 문자열이라면 → 전체 다운로드
+      # ── (C) artifact_name이 비어 있으면, 전체 아티팩트를 한꺼번에 다운로드 ──
       - name: Download all artifacts
         if: ${{ inputs.artifact_name == '' }}
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ inputs.run_id }}
+          # name 필드를 아예 제거했으므로 “전체”를 시도
           path: ./downloaded_data
 
-      # (C) Azure 로그인
+      # ── (D) Azure 로그인 ──
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # (D) 실제 파일이 있으면 업로드, 없으면 건너뜀
+      # ── (E) 다운로드된 파일이 하나라도 있으면 Blob에 업로드 ──
       - name: Upload to Azure Blob
         run: |
           if [ -d "./downloaded_data" ] && [ "$(ls -A downloaded_data)" ]; then
             az storage blob upload-batch \
-              --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT }}" \
-              --account-key  "${{ secrets.AZURE_STORAGE_KEY }}" \
-              --destination  "${{ secrets.AZURE_STORAGE_CONTAINER }}" \
-              --source       "./downloaded_data" \
+              --account-name   "${{ secrets.AZURE_STORAGE_ACCOUNT }}" \
+              --account-key    "${{ secrets.AZURE_STORAGE_KEY }}" \
+              --destination    "${{ secrets.AZURE_STORAGE_CONTAINER }}" \
+              --source         "./downloaded_data" \
               --if-none-match="*"
             echo "▶ Blob 업로드 완료"
           else
             echo "▶ 다운로드된 artifact가 없습니다. 업로드를 건너뜁니다."
           fi
 
-      # (E) Video Indexer도 동일하게 조건부 실행
+      # ── (F) 업로드된 영상이 있으면 Video Indexer 요청 ──
       - name: Trigger Azure Video Indexer
         env:
           VI_LOCATION:    ${{ secrets.VIDEO_INDEXER_LOCATION }}
