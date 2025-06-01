@@ -1,4 +1,3 @@
-# .github/workflows/upload-to-azure.yml
 name: Upload to Azure (manual)
 
 on:
@@ -22,84 +21,91 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 0) 리포지토리 체크아웃 -------------------------------------------------
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # 1) 해당 run 에 들어있는 아티팩트 목록 출력(옵션)
-    - name: Show artifacts in that run
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        gh api \
-          repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}/artifacts \
-          --paginate -q '.artifacts[] | "\(.name) (id:\(.id))"'
+      # ─── (A) 입력으로 artifact_name이 있으면 “특정 이름으로” 내려받기 ──────────────
+      - name: Download specific artifact
+        if: ${{ inputs.artifact_name != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          name: ${{ inputs.artifact_name }}
+          path: ./downloaded_data
 
-    # 2-A) artifact_name 이 **존재**할 때
-    - name: Download single artifact
-      if: inputs.artifact_name != ''
-      uses: actions/download-artifact@v4
-      with:
-        run-id: ${{ inputs.run_id }}
-        name:   ${{ inputs.artifact_name }}
-        path:   ./downloaded_data
+      # ─── (B) artifact_name이 비어 있을 때는 “모두” 내려받기 ───────────────────────
+      - name: Download all artifacts
+        if: ${{ inputs.artifact_name == '' }}
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          path: ./downloaded_data
 
-    # 2-B) artifact_name 이 **없을** 때 → 전부 다운로드
-    - name: Download all artifacts
-      if: inputs.artifact_name == ''
-      uses: actions/download-artifact@v4
-      with:
-        run-id: ${{ inputs.run_id }}
-        path:   ./downloaded_data
+      # ─── (C) Azure 로그인 ────────────────────────────────────────────────────
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    # 3) Azure 로그인 -------------------------------------------------------
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      # ─── (D) 실제로 다운로드된 파일이 있을 때만 업로드하기 ──────────────────────
+      - name: Upload to Azure Blob
+        run: |
+          # "downloaded_data" 폴더가 있고, 그 안에 파일이 하나라도 있는지 확인
+          if [ -d "./downloaded_data" ] && [ "$(ls -A downloaded_data)" ]; then
+            az storage blob upload-batch \
+              --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT }}" \
+              --account-key  "${{ secrets.AZURE_STORAGE_KEY }}" \
+              --destination  "${{ secrets.AZURE_STORAGE_CONTAINER }}" \
+              --source       "./downloaded_data" \
+              --if-none-match="*"
+            echo "▶ Blob 업로드 완료"
+          else
+            echo "▶ 다운로드된 artifact가 없습니다. 업로드를 건너뜁니다."
+          fi
 
-    # 4) Blob Storage 로 중복 없이 업로드 ----------------------------------
-    - name: Upload to Azure Blob
-      run: |
-        az storage blob upload-batch \
-          --account-name   "${{ secrets.AZURE_STORAGE_ACCOUNT }}" \
-          --account-key    "${{ secrets.AZURE_STORAGE_KEY }}" \
-          --destination    "${{ secrets.AZURE_STORAGE_CONTAINER }}" \
-          --source         "./downloaded_data" \
-          --if-none-match="*"
-        echo "▶ Blob 업로드 완료"
+      # ─── (E) Video Indexer 요청도 “downloaded_data” 유무를 재확인하여 조건부 실행 ───
+      - name: Trigger Azure Video Indexer
+        env:
+          VI_LOCATION:    ${{ secrets.VIDEO_INDEXER_LOCATION }}
+          VI_ACCOUNT_ID:  ${{ secrets.VIDEO_INDEXER_ACCOUNT_ID }}
+          VI_API_KEY:     ${{ secrets.VIDEO_INDEXER_API_KEY }}
+          AZ_ACCOUNT:     ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZ_CONTAINER:   ${{ secrets.AZURE_STORAGE_CONTAINER }}
+          AZ_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          # 만약 업로드 단계에서 실제 파일이 존재하지 않아 업로드를 건너뛰었다면,
+          # 여기서도 “downloaded_data”가 없으면 바로 종료
+          if [ ! -d "./downloaded_data" ] || [ -z "$(ls -A downloaded_data)" ]; then
+            echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜁니다."
+            exit 0
+          fi
 
-    # 5) Video Indexer 트리거 ----------------------------------------------
-    - name: Trigger Azure Video Indexer
-      env:
-        VI_LOCATION:    ${{ secrets.VIDEO_INDEXER_LOCATION }}
-        VI_ACCOUNT_ID:  ${{ secrets.VIDEO_INDEXER_ACCOUNT_ID }}
-        VI_API_KEY:     ${{ secrets.VIDEO_INDEXER_API_KEY }}
-        AZ_ACCOUNT:     ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        AZ_CONTAINER:   ${{ secrets.AZURE_STORAGE_CONTAINER }}
-        AZ_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-      run: |
-        ACCESS_TOKEN=$(az rest --method get \
-          --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
-          --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" -o tsv)
+          # 1) Video Indexer AccessToken 요청
+          ACCESS_TOKEN=$(az rest --method get \
+            --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
+            --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
+            --output tsv)
 
-        # 컨테이너 내 blob 이름만 깔끔히 추출
-        for BLOB in $(az storage blob list \
-            --account-name   "$AZ_ACCOUNT" \
-            --account-key    "$AZ_STORAGE_KEY" \
-            --container-name "$AZ_CONTAINER" \
-            --query '[].name' -o tsv); do
+          # 2) Blob Storage에서 파일 목록 받아와서 확장자가 비디오/오디오인 것만 인덱싱
+          for BLOB in $(az storage blob list \
+              --account-name   "$AZ_ACCOUNT" \
+              --account-key    "$AZ_STORAGE_KEY" \
+              --container-name "$AZ_CONTAINER" \
+              --output tsv | cut -f1); do
 
-          [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]] || continue
+            if [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]]; then
+              VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
+              echo "• Indexing $VIDEO_URL"
 
-          VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
-          echo "• Indexing $VIDEO_URL"
+              az rest --method post \
+                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
+                --headers "Content-Type:application/json" \
+                --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
+                --output none
 
-          az rest --method post \
-            --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
-            --headers "Content-Type:application/json" \
-            --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
-            --output none
+              # 과도한 동시 요청 방지용 짧은 슬립
+              sleep 2
+            fi
+          done
 
-          sleep 2   # 과도한 동시 요청 방지
-        done
-        echo "▶ Video Indexer 요청 완료"
+          echo "▶ Video Indexer 요청 완료"
