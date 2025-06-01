@@ -21,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ─── (A) 입력으로 artifact_name이 있으면 “특정 이름으로” 내려받기 ──────────────
+      # (A) artifact_name이 있으면 → 해당 이름으로만 다운로드
       - name: Download specific artifact
         if: ${{ inputs.artifact_name != '' }}
         uses: actions/download-artifact@v4
@@ -33,7 +33,7 @@ jobs:
           name: ${{ inputs.artifact_name }}
           path: ./downloaded_data
 
-      # ─── (B) artifact_name이 비어 있을 때는 “모두” 내려받기 ───────────────────────
+      # (B) artifact_name이 빈 문자열이라면 → 전체 다운로드
       - name: Download all artifacts
         if: ${{ inputs.artifact_name == '' }}
         uses: actions/download-artifact@v4
@@ -41,16 +41,15 @@ jobs:
           run-id: ${{ inputs.run_id }}
           path: ./downloaded_data
 
-      # ─── (C) Azure 로그인 ────────────────────────────────────────────────────
+      # (C) Azure 로그인
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ─── (D) 실제로 다운로드된 파일이 있을 때만 업로드하기 ──────────────────────
+      # (D) 실제 파일이 있으면 업로드, 없으면 건너뜀
       - name: Upload to Azure Blob
         run: |
-          # "downloaded_data" 폴더가 있고, 그 안에 파일이 하나라도 있는지 확인
           if [ -d "./downloaded_data" ] && [ "$(ls -A downloaded_data)" ]; then
             az storage blob upload-batch \
               --account-name "${{ secrets.AZURE_STORAGE_ACCOUNT }}" \
@@ -63,7 +62,7 @@ jobs:
             echo "▶ 다운로드된 artifact가 없습니다. 업로드를 건너뜁니다."
           fi
 
-      # ─── (E) Video Indexer 요청도 “downloaded_data” 유무를 재확인하여 조건부 실행 ───
+      # (E) Video Indexer도 동일하게 조건부 실행
       - name: Trigger Azure Video Indexer
         env:
           VI_LOCATION:    ${{ secrets.VIDEO_INDEXER_LOCATION }}
@@ -73,20 +72,16 @@ jobs:
           AZ_CONTAINER:   ${{ secrets.AZURE_STORAGE_CONTAINER }}
           AZ_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         run: |
-          # 만약 업로드 단계에서 실제 파일이 존재하지 않아 업로드를 건너뛰었다면,
-          # 여기서도 “downloaded_data”가 없으면 바로 종료
           if [ ! -d "./downloaded_data" ] || [ -z "$(ls -A downloaded_data)" ]; then
             echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜁니다."
             exit 0
           fi
 
-          # 1) Video Indexer AccessToken 요청
           ACCESS_TOKEN=$(az rest --method get \
             --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
             --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
             --output tsv)
 
-          # 2) Blob Storage에서 파일 목록 받아와서 확장자가 비디오/오디오인 것만 인덱싱
           for BLOB in $(az storage blob list \
               --account-name   "$AZ_ACCOUNT" \
               --account-key    "$AZ_STORAGE_KEY" \
@@ -96,14 +91,11 @@ jobs:
             if [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]]; then
               VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
               echo "• Indexing $VIDEO_URL"
-
               az rest --method post \
                 --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
                 --headers "Content-Type:application/json" \
                 --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
                 --output none
-
-              # 과도한 동시 요청 방지용 짧은 슬립
               sleep 2
             fi
           done
