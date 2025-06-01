@@ -29,12 +29,12 @@ jobs:
     - name: Install deps
       run: pip install yt-dlp google-api-python-client
 
-    - name: Restore cookies.txt          # ← 추가된 블록
-      if: $ {{ secrets.YT_COOKIES_B64 != '' }} 
-      run: |
-        echo "${{ secrets.YT_COOKIES_B64 }}" | base64 -d > cookies.txt
-        chmod 600 cookies.txt
-        echo "cookies.txt restored."
+      - name: Restore cookies.txt          # ← 추가된 블록
+        if: ${{ secrets.YT_COOKIES_B64 != '' }}
+        run: |
+          echo "${{ secrets.YT_COOKIES_B64 }}" | base64 -d > cookies.txt
+          chmod 600 cookies.txt
+          echo "cookies.txt restored."
 
     - name: Run fetch script
       id: run_fetch
