@@ -95,7 +95,9 @@ def video_ids_from_playlist(pl_id: str):
 # ───── 6. yt-dlp 다운로드 ───────────────────────────────────
 def fetch_and_save(video_id: str, out_dir: pathlib.Path):
     cmd = [
-        "yt-dlp", f"https://www.youtube.com/watch?v={video_id}",
+        "yt-dlp",
+        "--cookies", "cookies.txt",
+        f"https://www.youtube.com/watch?v={video_id}",
         "--write-info-json", "--write-description",
         "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
         "--merge-output-format", "mp4",
