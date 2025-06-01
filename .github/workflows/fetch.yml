@@ -36,9 +36,9 @@ jobs:
 
       # 5) (선택) 결과 ZIP 업로드 ─ 파일이 있을 때만 실행
       - name: Upload artifact
-        if: success() && hashFiles('data/**/*') != ''
+        if: success() && hashFiles('data/**') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: bodycam-bundle-${{ github.run_number }}
-          path: data/**/*
+          name: bodycam-bundle
+          path: data/**
           retention-days: 14          # 14일 후 자동 삭제
