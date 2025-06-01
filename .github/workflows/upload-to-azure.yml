@@ -1,4 +1,4 @@
-name: Upload to Azure Blob Storage
+name: Upload to Azure Blob Storage & Index with Video Indexer
 
 on:
   workflow_run:
@@ -6,23 +6,27 @@ on:
     types: [completed]
 
 jobs:
-  upload-to-azure:
+  upload-and-index:
     runs-on: ubuntu-latest
     steps:
+      # 1) 소스 체크아웃
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2) Artifacts(=data 폴더) 다운로드
       - name: Download bodycam artifact
         uses: actions/download-artifact@v3
         with:
           name: bodycam-bundle-${{ github.event.workflow_run.run_number }}
           path: data
 
+      # 3) Azure 로그인
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # 4) BlobStorage에 ‘data/’ 폴더 일괄 업로드 (이미 존재하는 파일은 건너뜀)
       - name: Upload entire data/ folder to Blob Storage (skip existing)
         run: |
           az storage blob upload-batch \
@@ -33,6 +37,7 @@ jobs:
             --overwrite false \
             --no-progress
 
+      # 5) 업로드된 Blob 리스트 확인 (옵션)
       - name: List uploaded blobs
         run: |
           az storage blob list \
@@ -40,3 +45,56 @@ jobs:
             --container-name ${{ secrets.AZURE_CONTAINER_NAME }} \
             --query "[].{name:name}" \
             -o table
+
+      # ────────────────────────────────────────────────────
+      # 6) Azure AI Video Indexer로 인덱싱 요청
+      #
+      #    ─ 필요한 환경 변수: 
+      #      AZURE_VI_ACCOUNT_ID, AZURE_VI_LOCATION, AZURE_VI_SUBSCRIPTION_KEY
+      #
+      #    1) Video Indexer Access Token 발급
+      #    2) Blob URL을 이용해 “인덱싱 요청” (POST)
+      #
+      - name: Generate Video Indexer access token
+        id: generate_token
+        run: |
+          # 1) Video Indexer Access Token 요청
+          VI_TOKEN=$(curl -s -G \
+            "https://api.videoindexer.ai/Auth/${{ secrets.AZURE_VI_LOCATION }}/Accounts/${{ secrets.AZURE_VI_ACCOUNT_ID }}/AccessToken" \
+            --data-urlencode "allowEdit=true" \
+            -H "Ocp-Apim-Subscription-Key: ${{ secrets.AZURE_VI_SUBSCRIPTION_KEY }}" )
+
+          echo "vi_token=$VI_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Index each uploaded blob in Video Indexer
+        run: |
+          set -e
+
+          # 2) 업로드된 Blob 목록을 확인하기 위해 조회
+          blobs=$(az storage blob list \
+            --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
+            --container-name ${{ secrets.AZURE_CONTAINER_NAME }} \
+            --query "[].name" -o tsv)
+
+          for name in $blobs; do
+            # 이미 인덱싱된 콘텐츠를 중복 요청하지 않으려면 
+            # Video Indexer 계정 내 “video name”으로 검색해서 처리 여부를 확인할 수도 있습니다.
+            # (여기서는 간단히 매번 인덱싱을 요청합니다. 필요 시 “already processed” 로직 추가)
+
+            echo "Indexing blob: $name"
+
+            # Blob URL (공개 컨테이너인 경우 별도 SAS 없이 접근 가능)
+            # 만약 Private 컨테이너라면, SAS Token을 생성하여 videoUrl 에 붙여야 합니다.
+            BLOB_URL="https://${{ secrets.AZURE_STORAGE_ACCOUNT }}.blob.core.windows.net/${{ secrets.AZURE_CONTAINER_NAME }}/$name"
+
+            # 인덱싱 요청 (POST)
+            curl -X POST \
+              "https://api.videoindexer.ai/${{ secrets.AZURE_VI_LOCATION }}/Accounts/${{ secrets.AZURE_VI_ACCOUNT_ID }}/Videos?name=$(basename "$name" | sed 's/ /%20/g')&privacy=Private&videoUrl=${BLOB_URL}" \
+              -H "Authorization: Bearer ${{ steps.generate_token.outputs.vi_token }}" \
+              -H "Content-Type: application/json" \
+              --fail \
+              --silent \
+              --show-error
+
+            echo " → Requested indexing for: $name"
+          done
