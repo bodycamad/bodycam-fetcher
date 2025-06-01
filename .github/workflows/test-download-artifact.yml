@@ -1,4 +1,4 @@
-name: Test Download-Artifact v3
+name: Test Download-Artifact v2
 
 permissions:
   contents: read
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v2
 
       # 실제로는 이미 생성된 다른 워크플로우의 run-id와 artifact name을 넣어야 합니다.
       - name: Download artifact (v3)
