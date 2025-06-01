@@ -1,82 +1,124 @@
+#!/usr/bin/env python3
 """
-혼합 수집 스크립트 · 최근 48 h · Private/Deleted 제외 · 키워드 필터 · 저쿼터
+YouTube Body-Cam Fetcher
 ────────────────────────────────────────────────────────────────────
-• channels.txt  ─  UCxxxxxxxxxxxxxxxxxxxxxxxx  [>> keyword1, keyword2 …]
-    ↳ UC… → UU…(업로드 재생목록) 로 변환하여 playlistItems(1 unit) 호출
-• playlists.txt ─  재생목록 ID 한 줄씩
+● channels.txt ─ UCxxxxxxxxxxxxxxxxxxxxxxxx  [>> keyword1, keyword2 …]
+    ↳ UC… → UU…(업로드 재생목록)로 바꿔 playlistItems 호출
+● playlists.txt ─ 재생목록 ID 한 줄씩
 ────────────────────────────────────────────────────────────────────
+최근 48 h 영상만 · Private/Deleted 제외 · 키워드 필터 · 중복 다운로드 방지
 """
 
-import os, sys, datetime, pathlib, subprocess
+from __future__ import annotations
+
+import datetime as dt
+import logging
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Tuple
+
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# ───── 1. API 키 ─────────────────────────────────────────────
+# ────────────── 0. 로깅 ──────────────────────────────────────────
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+)
+
+# ────────────── 1. YouTube API ─────────────────────────────────
 API_KEY = os.getenv("YT_API_KEY")
 if not API_KEY:
-    raise EnvironmentError("YT_API_KEY secret 가 없습니다.")
+    raise EnvironmentError("환경 변수 YT_API_KEY 가 설정되어 있지 않습니다.")
 yt = build("youtube", "v3", developerKey=API_KEY, cache_discovery=False)
 
-# ───── 2. 시간 범위 (현재 UTC-48 h) ─────────────────────────
-UTC     = datetime.timezone.utc
-NOW     = datetime.datetime.now(UTC)
-THRESHOLD_DT  = NOW - datetime.timedelta(hours=48)
-THRESHOLD_ISO = THRESHOLD_DT.isoformat(timespec="seconds")
+# ────────────── 2. 48 h 시간 경계 ───────────────────────────────
+UTC = dt.timezone.utc
+THRESHOLD_DT = dt.datetime.now(UTC) - dt.timedelta(hours=48)
 
-# ───── 3. 유틸 ──────────────────────────────────────────────
+# ────────────── 3. Cookie 파일(선택) ───────────────────────────
+COOKIES_FILE = os.getenv("YT_COOKIES_FILE", "cookies.txt")
+USE_COOKIES = pathlib.Path(COOKIES_FILE).is_file()
+
+# ────────────── 4. 보조 함수들 ─────────────────────────────────
 def to_upload_playlist_id(cid: str) -> str:
-    """UC… → UU… (업로드 재생목록)  |  이미 UU… 면 그대로"""
-    return "UU" + cid[2:] if cid.startswith("UC") and len(cid) == 24 else cid
+    """채널 ID(UC…) → 업로드 재생목록 ID(UU…)"""
+    return "UU" + cid[2:] if cid.startswith("UC") and len(cid) == 24 else cid[:24]
 
-def parse_channels_file(path="channels.txt"):
-    """channels.txt → [(업로드 PLID, [keywords…]), …]"""
-    res = []
-    if not pathlib.Path(path).exists():
+
+def parse_channels_file(path: str = "channels.txt") -> List[Tuple[str, List[str]]]:
+    res: List[Tuple[str, List[str]]] = []
+    p = pathlib.Path(path)
+    if not p.exists():
         return res
-    with open(path, encoding="utf-8") as fp:
-        for raw in fp:
-            raw = raw.split("#", 1)[0].strip()
-            if not raw:
-                continue
-            if ">>" in raw:
-                cid_part, kw_part = raw.split(">>", 1)
-                keywords = [k.strip().lower() for k in kw_part.split(",") if k.strip()]
-            else:
-                cid_part, keywords = raw, []
-            pl_id = to_upload_playlist_id(cid_part.strip())[:24]
-            if len(pl_id) != 24:
-                print("[WARN] skipped invalid ID:", pl_id)
-                continue
-            res.append((pl_id, keywords))
 
-    # DEBUG
-    for cid, kw in res:
-        print("[DEBUG] parsed:", cid, "keywords:", kw)
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        raw = raw.split("#", 1)[0].strip()
+        if not raw:
+            continue
+
+        if ">>" in raw:
+            cid_part, kw_part = raw.split(">>", 1)
+            keywords = [k.strip() for k in kw_part.split(",") if k.strip()]
+        else:
+            cid_part, keywords = raw, []
+
+        pl_id = to_upload_playlist_id(cid_part.strip())
+        if len(pl_id) == 24:
+            res.append((pl_id, keywords))
+        else:
+            logging.warning("잘못된 ID 무시: %s", pl_id)
+
     return res
 
-def read_playlists(path="playlists.txt"):
-    if not pathlib.Path(path).exists():
+
+def read_playlists(path: str = "playlists.txt") -> List[str]:
+    p = pathlib.Path(path)
+    if not p.exists():
         return []
-    with open(path, encoding="utf-8") as fp:
-        return [l.split("#", 1)[0].strip() for l in fp if l.strip()]
+    return [
+        l.split("#", 1)[0].strip()
+        for l in p.read_text(encoding="utf-8").splitlines()
+        if l.strip()
+    ]
 
-# ───── 4. 안전 실행 ─────────────────────────────────────────
-def safe_execute(req):
-    try:
-        return req.execute()
-    except HttpError as e:
-        if e.resp.status == 403 and "quotaExceeded" in str(e):
-            print("[INFO] API quota exhausted for today — stopping early.")
-            sys.exit(0)
-        raise
 
-# ───── 5. playlistItems → 최근 48 h 영상 ────────────────────
-def video_ids_from_playlist(pl_id: str):
-    vids = []
+def safe_execute(req, retries: int = 3):
+    """YouTube API 호출 + 간단 재시도 로직"""
+    for attempt in range(retries):
+        try:
+            return req.execute()
+        except HttpError as e:
+            status = getattr(e.resp, "status", None)
+            msg = str(e)
+            # 쿼터 소진 → 즉시 종료
+            if status == 403 and "quotaExceeded" in msg:
+                logging.info("YouTube API 일일 쿼터 소진. 스크립트 중단.")
+                sys.exit(0)
+
+            # 일시적 오류는 back-off 후 재시도
+            if status in (500, 502, 503, 504):
+                wait = 2 ** attempt
+                logging.warning("YouTube API %s 오류, %s초 뒤 재시도", status, wait)
+                time.sleep(wait)
+                continue
+            raise
+    raise RuntimeError("YouTube API 재시도 한도 초과")
+
+
+def video_ids_from_playlist(pl_id: str) -> List[Tuple[str, str]]:
+    """playlistItems → 48 h 이내 (videoId, title) 목록"""
+    vids: List[Tuple[str, str]] = []
     req = yt.playlistItems().list(
         part="contentDetails,snippet",
         playlistId=pl_id,
-        maxResults=50
+        maxResults=50,
     )
     while req:
         res = safe_execute(req)
@@ -84,59 +126,90 @@ def video_ids_from_playlist(pl_id: str):
             title = it["snippet"]["title"]
             if title in ("Private video", "Deleted video"):
                 continue
-            dt_raw = it["contentDetails"].get("videoPublishedAt") or it["snippet"]["publishedAt"]
-            # ISO → datetime  (Z → +00:00)
-            dt_obj = datetime.datetime.fromisoformat(dt_raw.replace("Z", "+00:00"))
-            if dt_obj >= THRESHOLD_DT:                       # ← 48 h 필터
+
+            dt_raw = (
+                it["contentDetails"].get("videoPublishedAt")
+                or it["snippet"]["publishedAt"]
+            )
+            dt_obj = dt.datetime.fromisoformat(dt_raw.replace("Z", "+00:00"))
+            if dt_obj >= THRESHOLD_DT:
                 vids.append((it["contentDetails"]["videoId"], title))
         req = yt.playlistItems().list_next(req, res)
     return vids
 
-# ───── 6. yt-dlp 다운로드 ───────────────────────────────────
+
 def fetch_and_save(video_id: str, out_dir: pathlib.Path):
+    """yt-dlp 다운로드 래퍼"""
+    out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "yt-dlp",
-        "--cookies", "cookies.txt",
         f"https://www.youtube.com/watch?v={video_id}",
-        "--write-info-json", "--write-description",
-        "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
-        "--merge-output-format", "mp4",
-        "--write-thumbnail", "--convert-thumbnails", "jpg",
-        "--download-archive", str(out_dir / "downloaded.txt"),
-        "-o", str(out_dir / "%(upload_date)s_%(id)s.%(ext)s"),
-        "--no-warnings", "--ignore-errors"
+        "--write-info-json",
+        "--write-description",
+        "-f",
+        "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
+        "--merge-output-format",
+        "mp4",
+        "--write-thumbnail",
+        "--convert-thumbnails",
+        "jpg",
+        "--download-archive",
+        str(out_dir / "downloaded.txt"),
+        "-o",
+        str(out_dir / "%(upload_date)s_%(id)s.%(ext)s"),
+        "--no-warnings",
+        "--ignore-errors",
     ]
+    if USE_COOKIES:
+        cmd[1:1] = ["--cookies", COOKIES_FILE]
+
     try:
-        subprocess.run(cmd, check=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
+        logging.info("✓ 다운로드 완료: %s", video_id)
     except subprocess.CalledProcessError as e:
-        print(f"[ERROR] yt-dlp failed for {video_id}: {e.returncode}")
+        logging.error("✗ yt-dlp 실패 (%s): %s", e.returncode, video_id)
 
-# ───── 7. 채널(=업로드 재생목록) 처리 ───────────────────────
-channels = parse_channels_file()
-for pl_id, kw in channels:
-    out = pathlib.Path("data") / pl_id
-    out.mkdir(parents=True, exist_ok=True)
 
-    vids = video_ids_from_playlist(pl_id)
-    if kw:
-        vids = [(v, t) for v, t in vids if any(k in t.lower() for k in kw)]
+def handle_playlist(pl_id: str, keywords: List[str]) -> int:
+    """재생목록 하나 처리 → 다운로드 개수 반환"""
+    out_dir = pathlib.Path("data") / pl_id
+    videos = video_ids_from_playlist(pl_id)
 
-    if not vids:
-        print(f"[CHANNEL] {pl_id}: No new videos")
-    else:
-        for vid, _ in vids:
-            fetch_and_save(vid, out)
-        print(f"[CHANNEL] {pl_id}: {len(vids)} videos processed")
+    # 키워드 필터 (제목 정규식 OR 매칭)
+    if keywords:
+        pattern = re.compile("|".join(map(re.escape, keywords)), re.I)
+        videos = [(vid, t) for vid, t in videos if pattern.search(t)]
 
-# ───── 8. playlists.txt 처리 ───────────────────────────────
-for pl_id in read_playlists():
-    out = pathlib.Path("data") / pl_id
-    out.mkdir(parents=True, exist_ok=True)
+    if not videos:
+        logging.info("[%s] 새 영상 없음", pl_id)
+        return 0
 
-    vids = video_ids_from_playlist(pl_id)
-    if not vids:
-        print(f"[PLAYLIST] {pl_id}: No new videos")
-    else:
-        for vid, _ in vids:
-            fetch_and_save(vid, out)
-        print(f"[PLAYLIST] {pl_id}: {len(vids)} videos processed")
+    logging.info("[%s] 새 영상 %d개", pl_id, len(videos))
+
+    # 병렬 다운로드 (network-bound → 4~8 스레드면 충분)
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [ex.submit(fetch_and_save, vid, out_dir) for vid, _ in videos]
+        for _ in as_completed(futures):
+            pass
+    return len(videos)
+
+
+# ────────────── Main ───────────────────────────────────────────
+def main():
+    total = 0
+    for pl_id, kws in parse_channels_file():
+        total += handle_playlist(pl_id, kws)
+
+    for pl_id in read_playlists():
+        total += handle_playlist(pl_id, [])
+
+    logging.info("작업 완료 — 총 %d개 영상 처리", total)
+
+
+if __name__ == "__main__":
+    main()
