@@ -1,0 +1,74 @@
+name: Upload Bodycam Data to Azure Blob
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 17 * * *'  # 매일 KST 02:00 (UTC 17:00)
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install yt-dlp google-api-python-client azure-cli
+
+      - name: Run fetch script
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+        run: |
+          python daily_fetch.py
+          # (선택) data 전체를 7z로 압축하기
+          7z a data.7z ./data
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Check Azure CLI version
+        run: az version
+
+      - name: Set storage account variables
+        run: echo "AZURE_STORAGE_ACCOUNT=mystorageacct01" >> $GITHUB_ENV
+
+      - name: Upload data to Azure Blob Storage
+        run: |
+          CONTAINER_NAME="bodycam-artifacts"
+          # 디렉터리 전체 업로드
+          az storage blob upload-batch \
+            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+            --source "./data" \
+            --destination "$CONTAINER_NAME" \
+            --auth-mode login \
+            --pattern "*" \
+            --overwrite true
+
+      - name: Generate SAS URL for data.zip
+        if: always()
+        run: |
+          CONTAINER_NAME="bodycam-artifacts"
+          BLOB_NAME="data.7z"   # 위에서 만든 압축 파일 이름
+          EXPIRY="$(date -u -d "7 days" '+%Y-%m-%dT%H:%MZ')"
+
+          SAS_TOKEN=$(az storage blob generate-sas \
+            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+            --container-name $CONTAINER_NAME \
+            --name "$BLOB_NAME" \
+            --permissions r \
+            --expiry $EXPIRY \
+            --auth-mode login \
+            -o tsv)
+
+          echo "📥 Download URL (expires at $EXPIRY):"
+          echo "https://${{ env.AZURE_STORAGE_ACCOUNT }}.blob.core.windows.net/$CONTAINER_NAME/$BLOB_NAME?$SAS_TOKEN"
