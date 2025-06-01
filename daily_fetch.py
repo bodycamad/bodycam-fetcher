@@ -22,9 +22,10 @@ if not API_KEY:
 yt = build("youtube", "v3", developerKey=API_KEY, cache_discovery=False)
 
 # ───── 2. 날짜 (UTC 오늘 + 전날 00 Z 이후 48 h) ─────────────────
-today      = datetime.datetime.utcnow().date()
-yesterday  = today - datetime.timedelta(days=1)
-today_iso  = today.isoformat()
+today      = datetime.datetime.utcnow().date()          # e.g. 2025-06-01
+yesterday  = today - datetime.timedelta(days=1)         # 2025-05-31
+today_iso  = today.isoformat()                          # '2025-06-01'
+yest_iso   = yesterday.isoformat()                      # '2025-05-31'
 
 # ───── 3. 도우미 함수 ───────────────────────────────────────────
 def to_upload_playlist_id(cid: str) -> str:
@@ -73,7 +74,7 @@ def safe_execute(req):
             sys.exit(0)          # 성공(✔) 상태로 워크플로 종료
         raise                    # 다른 오류는 그대로 전파
 
-# ───── 5. playlistItems → 오늘 영상 목록 ───────────────────────
+# ───── 5. playlistItems → 48 h 영상 목록 ───────────────────────
 def video_ids_from_playlist(pl_id: str):
     vids = []
     req = yt.playlistItems().list(
@@ -87,9 +88,15 @@ def video_ids_from_playlist(pl_id: str):
             title = it["snippet"]["title"]
             if title in ("Private video", "Deleted video"):
                 continue
-            dt = it["contentDetails"].get("videoPublishedAt") or it["snippet"]["publishedAt"]
-            if dt[:10] == today_iso:
+
+            # videoPublishedAt 우선, 없으면 snippet.publishedAt
+            dt = it["contentDetails"].get("videoPublishedAt") \
+                 or it["snippet"]["publishedAt"]              # ISO8601 → 'YYYY-MM-DD…'
+
+            # ▶ 어제 00 Z 이후(48 h 창) 이면 다운로드
+            if dt[:10] >= yest_iso:                           # ★ 변경된 부분
                 vids.append((it["contentDetails"]["videoId"], title))
+
         req = yt.playlistItems().list_next(req, res)
     return vids
 
