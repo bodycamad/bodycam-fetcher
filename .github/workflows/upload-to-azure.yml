@@ -1,74 +1,52 @@
-name: Upload Bodycam Data to Azure Blob
+name: Upload to Azure Blob Storage
 
+# “daily-bodycam-fetch” 워크플로우가 완료되면 이 워크플로우가 자동 실행되도록 설정합니다.
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 17 * * *'  # 매일 KST 02:00 (UTC 17:00)
+  workflow_run:
+    workflows: ["daily-bodycam-fetch"]
+    types: [completed]
 
 jobs:
-  build-and-upload:
+  upload-to-azure:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
     steps:
+      # 1. 깃허브 레포 체크아웃 (필요는 없지만, download-artifact와 az CLI 사용을 위해 보통 포함합니다)
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      # 2. 앞서 “daily-bodycam-fetch” 워크플로우에서 업로드된 아티팩트(artifact)를 내려받습니다.
+      #    아티팩트 이름은 "bodycam-bundle-${{ github.event.workflow_run.run_number }}" 형태로 되어 있으므로,
+      #    event.context.workflow_run.run_number 를 사용해 정확한 이름을 지정합니다.
+      - name: Download bodycam artifact
+        uses: actions/download-artifact@v3
         with:
-          python-version: "3.11"
+          name: bodycam-bundle-${{ github.event.workflow_run.run_number }}
+          path: data
 
-      - name: Install dependencies
-        run: |
-          pip install yt-dlp google-api-python-client azure-cli
-
-      - name: Run fetch script
-        env:
-          YT_API_KEY: ${{ secrets.YT_API_KEY }}
-        run: |
-          python daily_fetch.py
-          # (선택) data 전체를 7z로 압축하기
-          7z a data.7z ./data
-
+      # 3. Azure에 로그인합니다. 
+      #    미리 저장해 둔 GitHub Secret “AZURE_CREDENTIALS” (서비스 주체 JSON)을 사용해 로그인합니다.
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Check Azure CLI version
-        run: az version
-
-      - name: Set storage account variables
-        run: echo "AZURE_STORAGE_ACCOUNT=mystorageacct01" >> $GITHUB_ENV
-
-      - name: Upload data to Azure Blob Storage
+      # 4. data/ 디렉터리 전체를 Blob 컨테이너에 업로드합니다.
+      #     AZURE_STORAGE_ACCOUNT: 스토리지 계정 이름을 미리 GitHub Secrets에 등록해 두어야 합니다.  
+      #     AZURE_CONTAINER_NAME: 업로드할 컨테이너 이름을 Secrets로 등록해야 합니다.  
+      - name: Upload entire data/ folder to Blob Storage
         run: |
-          CONTAINER_NAME="bodycam-artifacts"
-          # 디렉터리 전체 업로드
           az storage blob upload-batch \
-            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
-            --source "./data" \
-            --destination "$CONTAINER_NAME" \
+            --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
+            --destination ${{ secrets.AZURE_CONTAINER_NAME }} \
+            --source ./data \
             --auth-mode login \
-            --pattern "*" \
-            --overwrite true
+            --no-progress
 
-      - name: Generate SAS URL for data.zip
-        if: always()
+      # 5. (선택) 업로드가 끝난 후, 업로드된 blob 목록을 확인하고 싶으면 다음 명령을 추가할 수 있습니다.
+      - name: List uploaded blobs
         run: |
-          CONTAINER_NAME="bodycam-artifacts"
-          BLOB_NAME="data.7z"   # 위에서 만든 압축 파일 이름
-          EXPIRY="$(date -u -d "7 days" '+%Y-%m-%dT%H:%MZ')"
-
-          SAS_TOKEN=$(az storage blob generate-sas \
-            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
-            --container-name $CONTAINER_NAME \
-            --name "$BLOB_NAME" \
-            --permissions r \
-            --expiry $EXPIRY \
-            --auth-mode login \
-            -o tsv)
-
-          echo "📥 Download URL (expires at $EXPIRY):"
-          echo "https://${{ env.AZURE_STORAGE_ACCOUNT }}.blob.core.windows.net/$CONTAINER_NAME/$BLOB_NAME?$SAS_TOKEN"
+          az storage blob list \
+            --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
+            --container-name ${{ secrets.AZURE_CONTAINER_NAME }} \
+            --query "[].{name:name}" \
+            -o table
