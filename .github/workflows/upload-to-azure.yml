@@ -1,5 +1,8 @@
 name: Upload to Azure (manual or after daily-bodycam-fetch)
 
+permissions:
+  contents: read    # download-artifact가 다른 워크플로우 아티팩트를 가져오기 위해 필요합니다.
+  
 # ───────────────────────────────────────────────────────────────
 # 1) daily-bodycam-fetch 워크플로우가 완료되면 자동 실행
 # 2) 수동으로 이미 끝난 daily-bodycam-fetch에서 아티팩트를 가져와 실행
@@ -16,9 +19,6 @@ on:
       artifact_name:
         description: "가져올 아티팩트 이름 (예: bodycam-bundle-25)"
         required: true
-
-permissions:
-  contents: read    # download-artifact가 다른 워크플로우 아티팩트를 가져오기 위해 필요합니다.
 
 jobs:
   upload-and-index:
