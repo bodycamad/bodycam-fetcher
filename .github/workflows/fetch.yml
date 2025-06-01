@@ -1,44 +1,45 @@
 name: daily-bodycam-fetch
 
 permissions:
-  contents: write        # 필요하면 그대로 유지
+  contents: write     # PR에 파일 커밋이 없다면 read 로 줄여도 무방
 
 on:
   schedule:
-    - cron: '0 17 * * *'   # 매일 KST 02:00
-  workflow_dispatch:       # 수동 실행 버튼
+    - cron: '0 17 * * *'        # 매일 KST 02:00 (UTC 17:00)
+  workflow_dispatch:
+
+concurrency:
+  group: daily-bodycam-fetch
+  cancel-in-progress: true      # 같은 워크플로가 이미 돌고 있으면 최신만 남김
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
-    timeout-minutes: 120    # 영상 다운로드 시간 대비 여유
+    timeout-minutes: 120
 
     steps:
-      # 1) 레포 체크아웃
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      # 2) Python 3.11 설치
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: pip                # ← 의존성 캐시
 
-      # 3) yt-dlp · Google API 클라이언트 설치
-      - name: Install deps
-        run: pip install yt-dlp google-api-python-client
+    - name: Install deps
+      run: pip install yt-dlp google-api-python-client
 
-      # 4) 수집 스크립트 실행
-      - name: Run fetch script
-        id: run_fetch                  # ← 나중에 outcome 확인용 ID
-        env:
-          YT_API_KEY: ${{ secrets.YT_API_KEY }}
-        run: python daily_fetch.py
+    - name: Run fetch script
+      id: run_fetch
+      env:
+        YT_API_KEY: ${{ secrets.YT_API_KEY }}
+      run: python daily_fetch.py
 
-      # 5) (선택) 결과 ZIP 업로드 ─ 파일이 있을 때만 실행
-      - name: Upload artifact
-        if: success() && hashFiles('data/**') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: bodycam-bundle
-          path: data/**
-          retention-days: 14          # 14일 후 자동 삭제
+    - name: Upload artifact
+      if: steps.run_fetch.outcome == 'success' && hashFiles('data/**/*') != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: bodycam-bundle
+        path: data/**/*
+        compression-level: 0      # 대용량 업로드 속도 향상
+        retention-days: 14
