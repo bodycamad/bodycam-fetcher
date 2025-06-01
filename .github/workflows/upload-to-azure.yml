@@ -1,16 +1,15 @@
-# .github/workflows/upload-to-azure.yml
-name: Upload to Azure (단독 실행용)
+name: Upload to Azure (manual)
 
 on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'daily-bodycam-fetch 워크플로의 Run ID'
+        description: 'daily-bodycam-fetch Run ID'
         required: true
         type: number
       artifact_name:
-        description: '아티팩트 이름 (예: bodycam-bundle-25)'
-        required: true
+        description: '(선택) 다운로드할 Artifact 이름'
+        required: false
         type: string
 
 permissions:
@@ -20,18 +19,27 @@ permissions:
 jobs:
   upload-and-index:
     runs-on: ubuntu-latest
-
     steps:
-      # ➊ 리포지토리 체크아웃 (download-artifact 선행 조건)
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      # ➋ 원하는 run ID/아티팩트로부터 data 다운로드
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          run-id: ${{ inputs.run_id }}
-          name:   ${{ inputs.artifact_name }}
-          path:   ./downloaded_data      # 이후 단계에서 동일 경로 사용
+    # --- (A) Run ID 안의 artifact 목록을 먼저 출력해 준다 -------------
+    - name: Show artifacts in that run (for debugging)
+      run: |
+        gh api \
+          repos/${{ github.repository }}/actions/runs/${{ inputs.run_id }}/artifacts \
+          --paginate -q '.artifacts[] | "\(.name) (id:\(.id))"' \
+        || echo "::warning ::gh CLI 가 없으면 무시해도 됩니다"
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    # --- (B) artifact_name 이 비어있으면 모두 다운로드 ---------------
+    - name: Download artifact(s)
+      uses: actions/download-artifact@v4
+      with:
+        run-id: ${{ inputs.run_id }}
+        # artifact_name 입력이 있으면 그 이름, 없으면 생략해 전부
+        name: ${{ inputs.artifact_name && inputs.artifact_name || '' }}
+        path: ./downloaded_data
 
       # ➌ Azure 로그인 (서비스 주체 JSON을 AZURE_CREDENTIALS 시크릿에 저장해 둠)
       - name: Azure Login
