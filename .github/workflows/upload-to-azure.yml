@@ -1,22 +1,17 @@
-# .github/workflows/upload-to-azure.yml
-
 name: Upload to Azure (단독 실행용)
 
-# 1) 수동 트리거
 on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'daily-bodycam-fetch 워크플로우의 Run ID (정수)'
+        description: 'daily-bodycam-fetch 워크플로의 Run ID'
         required: true
         type: number
       artifact_name:
-        description: '다운로드할 아티팩트 이름 (예: bodycam-bundle-25)'
+        description: '아티팩트 이름 (예: bodycam-bundle-25)'
         required: true
         type: string
 
-# 2) Runner가 marketplace에서 download-artifact 액션을 내려받을 수 있게, 
-#    root에 반드시 이 permissions 블록을 둡니다.
 permissions:
   actions: read
   contents: read
@@ -26,79 +21,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 3) (필수) 리포지토리 체크아웃. download-artifact 전에 checkout이 항상 있어야 합니다.
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 4) 이미 생성된 artifact를 “run-id + name”을 사용해 내려받습니다.
-      - name: Download bodycam artifact from daily-bodycam-fetch
+      # 아티팩트 → ./downloaded_data 로 풀기
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ github.event.inputs.run_id }}
-          name:   ${{ github.event.inputs.artifact_name }}
-          path:   ./data
+          run-id: ${{ inputs.run_id }}
+          name:   ${{ inputs.artifact_name }}
+          path:   ./downloaded_data          # ← 경로 통일
 
-      # 5) Azure 로그인 (AZURE_CREDENTIALS는 GitHub Secrets에 미리 등록되어 있어야 합니다)
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 6) Blob Storage에 업로드 (중복 업로드 방지: --if-none-match="*")
-      - name: Upload to Azure Blob Storage
+      - name: Upload to Azure Blob
         run: |
-          AZURE_ACCOUNT_NAME="${{ secrets.AZURE_STORAGE_ACCOUNT }}"
-          AZURE_CONTAINER_NAME="${{ secrets.AZURE_STORAGE_CONTAINER }}"
-          AZURE_ACCOUNT_KEY="${{ secrets.AZURE_STORAGE_KEY }}"
-
           az storage blob upload-batch \
-            --account-name "$AZURE_ACCOUNT_NAME" \
-            --account-key "$AZURE_ACCOUNT_KEY" \
-            --destination "$AZURE_CONTAINER_NAME" \
-            --source "./downloaded_data" \
-            --pattern "*" \
+            --account-name   "${{ secrets.AZURE_STORAGE_ACCOUNT }}" \
+            --account-key    "${{ secrets.AZURE_STORAGE_KEY }}" \
+            --destination    "${{ secrets.AZURE_STORAGE_CONTAINER }}" \
+            --source         "./downloaded_data" \
             --if-none-match="*"
-
           echo "▶ Blob 업로드 완료"
 
-      # 7) (선택) Azure Video Indexer 자동 인덱싱
       - name: Trigger Azure Video Indexer
         env:
-          VI_LOCATION:     ${{ secrets.VIDEO_INDEXER_LOCATION }}    # ex) "trial", "eastus"
-          VI_ACCOUNT_ID:   ${{ secrets.VIDEO_INDEXER_ACCOUNT_ID }}
-          VI_API_KEY:      ${{ secrets.VIDEO_INDEXER_API_KEY }}
-          AZ_ACCOUNT:      ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          AZ_CONTAINER:    ${{ secrets.AZURE_STORAGE_CONTAINER }}
-          AZ_STORAGE_KEY:  ${{ secrets.AZURE_STORAGE_KEY }}
+          VI_LOCATION:   ${{ secrets.VIDEO_INDEXER_LOCATION }}
+          VI_ACCOUNT_ID: ${{ secrets.VIDEO_INDEXER_ACCOUNT_ID }}
+          VI_API_KEY:    ${{ secrets.VIDEO_INDEXER_API_KEY }}
+          AZ_ACCOUNT:    ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZ_CONTAINER:  ${{ secrets.AZURE_STORAGE_CONTAINER }}
+          AZ_STORAGE_KEY:${{ secrets.AZURE_STORAGE_KEY }}
         run: |
-          # 1) Video Indexer Access Token 요청
-          ACCESS_TOKEN=$( \
-            az rest \
-              --method get \
-              --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
-              --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
-              --query "[]" -o tsv \
-          )
+          ACCESS_TOKEN=$(az rest --method get \
+            --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
+            --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
+            --output tsv)
 
-          # 2) 컨테이너 내 비디오/오디오(.mp4, .mov 등) 파일들을 순회하며 인덱싱 요청
-          for BLOB in $( \
-            az storage blob list \
+          for BLOB in $(az storage blob list \
               --account-name "$AZ_ACCOUNT" \
-              --account-key "$AZ_STORAGE_KEY" \
+              --account-key  "$AZ_STORAGE_KEY" \
               --container-name "$AZ_CONTAINER" \
-              --query "[].name" -o tsv \
-          ); do
+              --query "[].name" -o tsv); do
             if [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]]; then
               VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
-              echo "  • Indexing: $VIDEO_URL"
-              az rest \
-                --method post \
-                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos?accessToken=$ACCESS_TOKEN&name=$(basename $BLOB)&videoUrl=$VIDEO_URL" \
+              echo "• Indexing $VIDEO_URL"
+              az rest --method post \
+                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
                 --headers "Content-Type:application/json" \
-                --body "{}" \
-                --query "id" -o tsv \
-                && echo "    => Index 요청 완료: $(basename $BLOB)"
+                --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
+                --output none
             fi
           done
-
           echo "▶ Video Indexer 요청 완료"
