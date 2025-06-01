@@ -18,9 +18,10 @@ if not API_KEY:
 yt = build("youtube", "v3", developerKey=API_KEY, cache_discovery=False)
 
 # ───── 2. 시간 범위 (현재 UTC-48 h) ─────────────────────────
-NOW          = datetime.datetime.utcnow()
-THRESHOLD_DT = NOW - datetime.timedelta(hours=48)     # ← 48 h 기준점
-THRESHOLD_ISO = THRESHOLD_DT.isoformat(timespec="seconds") + "Z"
+UTC     = datetime.timezone.utc
+NOW     = datetime.datetime.now(UTC)
+THRESHOLD_DT  = NOW - datetime.timedelta(hours=48)
+THRESHOLD_ISO = THRESHOLD_DT.isoformat(timespec="seconds")
 
 # ───── 3. 유틸 ──────────────────────────────────────────────
 def to_upload_playlist_id(cid: str) -> str:
