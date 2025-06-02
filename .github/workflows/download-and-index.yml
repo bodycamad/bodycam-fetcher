@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'bodycam-bundle을 올린 워크플로의 Run ID'
+        description: 'bodycambundle을 올린 워크플로의 Run ID'
         required: true
         type: string
 
@@ -27,11 +27,11 @@ jobs:
           enable-AzPSSession: false
 
       # ── 반드시 run-id + 이름이 정확해야 한다 ─────────────────
-      - name: Download bodycam-bundle artifact
+      - name: Download bodycambundle artifact
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ inputs.run_id }}   # ← 업로드 쪽 run-ID
-          name:   bodycam-bundle         # ← 업로드 시 지정한 이름
+          name:   bodycambundle         # ← 업로드 시 지정한 이름
           path:   ./downloaded_data
       # ──────────────────────────────────────────────────────────
 
