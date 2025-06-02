@@ -17,8 +17,6 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Azure login
         uses: azure/login@v1
@@ -28,7 +26,7 @@ jobs:
 
       # ── 반드시 run-id + 이름이 정확해야 한다 ─────────────────
       - name: Download bodycambundle artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v2
         with:
           run-id: ${{ inputs.run_id }}   # ← 업로드 쪽 run-ID
           name:   bodycambundle         # ← 업로드 시 지정한 이름
@@ -53,4 +51,41 @@ jobs:
           AZ_STORAGE_KEY: ${{ secrets.AZ_STORAGE_KEY }}
           AZ_CONTAINER:   ${{ secrets.AZ_CONTAINER }}
 
-      # 이하 Video Indexer 스텝은 그대로 …
+      - name: Send each media file to Video Indexer
+        run: |
+          if [ ! -d "./downloaded_data" ] || [ -z "$(ls -A downloaded_data)" ]; then
+            echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜁니다."
+            exit 0
+          fi
+
+          ACCESS_TOKEN=$(az rest --method get \
+            --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
+            --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
+            --output tsv)
+
+          for BLOB in $(az storage blob list \
+              --account-name   "$AZ_ACCOUNT" \
+              --account-key    "$AZ_STORAGE_KEY" \
+              --container-name "$AZ_CONTAINER" \
+              --output tsv | cut -f1); do
+
+            if [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]]; then
+              VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
+              echo "• Indexing $VIDEO_URL"
+              az rest --method post \
+                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
+                --headers "Content-Type:application/json" \
+                --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
+                --output none
+              sleep 2
+            fi
+          done
+
+          echo "▶ Video Indexer 요청 완료"
+        env:
+          VI_LOCATION:    ${{ secrets.VI_LOCATION }}
+          VI_ACCOUNT_ID:  ${{ secrets.VI_ACCOUNT_ID }}
+          VI_API_KEY:     ${{ secrets.VI_API_KEY }}
+          AZ_ACCOUNT:     ${{ secrets.AZ_ACCOUNT }}
+          AZ_STORAGE_KEY: ${{ secrets.AZ_STORAGE_KEY }}
+          AZ_CONTAINER:   ${{ secrets.AZ_CONTAINER }}
