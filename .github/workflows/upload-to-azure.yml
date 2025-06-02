@@ -10,29 +10,26 @@ on:
 
 jobs:
   upload-and-index:
-    runs-on: ubuntu-24.04   # GitHub-hosted runner (24.04 이미지)
+    runs-on: ubuntu-24.04
 
     steps:
-    # 1) Git checkout ──────────────────────────────────────────────
     - uses: actions/checkout@v4
 
-    # 2) Azure 로그인 ──────────────────────────────────────────────
     - name: Azure login
       uses: azure/login@v1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         enable-AzPSSession: false
 
-    # 3) **문제였던 아티팩트 다운로드** ───────────────────────────────
-    #    run-id + name 을 모두 지정해야 0 artifact 버그를 피할 수 있습니다.
+    # --- 여기부터 핵심 수정 블록 ---
     - name: Download bodycam-bundle artifact
       uses: actions/download-artifact@v4
       with:
-        run-id: ${{ inputs.run_id }}      # 워크플로-디스패치 입력값
-        name:  bodycam-bundle             # ← 반드시 명시!
+        run-id: ${{ inputs.run_id }}
+        name:  bodycam-bundle      # ← 반드시!
         path:  ./downloaded_data
+    # --- 여기까지 ---
 
-    # 4) Blob Storage로 업로드 ─────────────────────────────────────
     - name: Upload to Azure Blob if files exist
       run: |
         if [ -d "./downloaded_data" ] && [ "$(ls -A downloaded_data)" ]; then
@@ -51,10 +48,8 @@ jobs:
         AZ_STORAGE_KEY:  ${{ secrets.AZ_STORAGE_KEY }}
         AZ_CONTAINER:    ${{ secrets.AZ_CONTAINER }}
 
-    # 5) Video Indexer 호출 ────────────────────────────────────────
     - name: Send each media file to Video Indexer
       run: |
-        # 업로드된 파일이 없으면 종료
         if [ ! -d "./downloaded_data" ] || [ -z "$(ls -A downloaded_data)" ]; then
           echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜁니다."
           exit 0
@@ -79,10 +74,9 @@ jobs:
               --headers "Content-Type:application/json" \
               --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
               --output none
-            sleep 2        # 과도한 동시 요청 방지
+            sleep 2
           fi
         done
-
         echo "▶ Video Indexer 요청 완료"
       env:
         VI_LOCATION:     ${{ secrets.VI_LOCATION }}
