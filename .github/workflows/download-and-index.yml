@@ -1,4 +1,3 @@
-# .github/workflows/download-and-index.yml
 name: Download and Index Bodycam Bundle
 
 permissions:
