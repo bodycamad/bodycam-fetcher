@@ -21,7 +21,7 @@ jobs:
           zip -r bodycam-bundle.zip bundle/
 
       - name: Upload bodycam-bundle artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: bodycam-bundle       # ← 여기 이름이 다운로드 워크플로와 정확히 일치해야 함.
           path: bodycam-bundle.zip
