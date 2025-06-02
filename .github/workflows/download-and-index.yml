@@ -1,38 +1,39 @@
+# .github/workflows/download-and-index.yml
 name: Download and Index Bodycam Bundle
 
 permissions:
-  actions: read      # ← 필수
+  actions: read      # 아티팩트를 읽기 위해 반드시 필요합니다.
   contents: read
 
 on:
-  workflow_dispatch:
-    inputs:
-      run_id:
-        description: 'bodycambundle을 올린 워크플로의 Run ID'
-        required: true
-        type: string
+  workflow_run:
+    workflows: ["daily-bodycam-fetch"]   # ← 정확히 fetch.yml에 정의된 name과 일치시킵니다.
+    types: [completed]
 
 jobs:
   download-and-index:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
-    
+
       - name: Azure login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: false
 
-      # ── 이름에 상관없이 모든 아티팩트를 다운로드 ─────────────────
-      - name: Download all artifacts from run
+      # ── “daily-bodycam-fetch” 워크플로에서 업로드된 아티팩트 다운로드 ───────────────────────
+      - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ inputs.run_id }}   # ← 업로드 쪽 run-ID
-          path:   ./downloaded_data
-      # ──────────────────────────────────────────────────────────
+          run-id:       ${{ github.event.workflow_run.id }}    # daily-bodycam-fetch의 run_id
+          name:         bodycam-bundle                          # daily-bodycam-fetch에서 upload-artifact에 지정한 이름
+          path:         ./downloaded_data
+          github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }}    # 반드시 actions:read 권한이 있는 토큰
+      # ────────────────────────────────────────────────────────────────────────────────────
 
       - name: Upload to Azure Blob if files exist
         run: |
