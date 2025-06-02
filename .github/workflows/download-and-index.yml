@@ -1,5 +1,9 @@
 name: Download and Index Bodycam Bundle
 
+permissions:
+  actions: read
+  contents: read   
+
 on:
   workflow_dispatch:
     inputs:
