@@ -26,12 +26,11 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: false
 
-      # ── 반드시 run-id + 이름이 정확해야 한다 ─────────────────
-      - name: Download bodycambundle artifact
-        uses: actions/download-artifact@v2
+      # ── 이름에 상관없이 모든 아티팩트를 다운로드 ─────────────────
+      - name: Download all artifacts from run
+        uses: actions/download-artifact@v4
         with:
           run-id: ${{ inputs.run_id }}   # ← 업로드 쪽 run-ID
-          name:   bodycambundle         # ← 업로드 시 지정한 이름
           path:   ./downloaded_data
       # ──────────────────────────────────────────────────────────
 
