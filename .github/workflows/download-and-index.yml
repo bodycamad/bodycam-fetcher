@@ -3,6 +3,7 @@ name: Download and Index Bodycam Bundle
 permissions:
   actions: read
   contents: read
+  artifacts: read # Artifact 다운로드에 필요
 
 on:
   # 1) 수동 실행 (Run workflow 버튼)
@@ -16,7 +17,7 @@ on:
   # 2) daily-bodycam-fetch 워크플로우 완료 시 자동 실행
   workflow_run:
     workflows:
-      - daily-bodycam-fetch        # ← fetch.yml 상단의 name: 과 똑같이 작성
+      - daily-bodycam-fetch # ← fetch.yml 상단의 name: 과 똑같이 작성
     types:
       - completed
 
@@ -25,9 +26,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     # 수동으로 실행되거나, workflow_run 이벤트이고 성공(conclusion == 'success')일 때만 실행
-    if: ${{ 
-      github.event_name == 'workflow_dispatch' || 
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') 
+    if: ${{
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     }}
 
     steps:
@@ -47,17 +48,21 @@ jobs:
           run-id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.inputs.run_id }}
           name: bodycam-bundle
           path: ./downloaded_data
-          github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }}
+          # github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }} # GITHUB_TOKEN 기본 권한으로 충분하므로 제거
+
+      - name: Install jq for JSON parsing
+        run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Upload to Azure Blob if files exist
         run: |
           if [ -d "./downloaded_data" ] && [ "$(ls -A downloaded_data)" ]; then
+            echo "Uploading files to Azure Blob storage..."
             az storage blob upload-batch \
               --account-name   "$AZ_ACCOUNT" \
               --account-key    "$AZ_STORAGE_KEY" \
               --destination    "$AZ_CONTAINER" \
               --source         "./downloaded_data" \
-              --if-none-match="*"
+              --overwrite # 이미 존재하면 덮어쓰기 (기존 --if-none-match="*" 대신)
             echo "▶ Blob 업로드 완료"
           else
             echo "▶ 다운로드된 artifact가 없습니다. 업로드를 건너뜁니다."
@@ -70,30 +75,44 @@ jobs:
       - name: Send each media file to Video Indexer
         run: |
           if [ ! -d "./downloaded_data" ] || [ -z "$(ls -A downloaded_data)" ]; then
-            echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜁니다."
+            echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜀."
             exit 0
           fi
 
-          ACCESS_TOKEN=$(az rest --method get \
-            --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
-            --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
-            --output tsv)
+          echo "Getting Video Indexer access token..."
+          # Video Indexer Access Token 획득 (Azure Resource Manager 기반)
+          ACCESS_TOKEN=$(az rest --method post \
+            --uri "https://management.azure.com/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}/providers/Microsoft.VideoIndexer/accounts/$VI_ACCOUNT_ID/generateAccessToken?api-version=2025-01-01" \
+            --headers "Content-Type:application/json" \
+            --body '{"permissionType":"Contributor","scope":"Account"}' \
+            --output json | jq -r '.accessToken')
+          
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Error: Failed to get Video Indexer access token."
+            exit 1
+          fi
+          echo "Access token obtained."
 
-          for BLOB in $(az storage blob list \
-              --account-name   "$AZ_ACCOUNT" \
-              --account-key    "$AZ_STORAGE_KEY" \
-              --container-name "$AZ_CONTAINER" \
-              --output tsv | cut -f1); do
+          echo "Listing blobs from Azure storage and sending to Video Indexer..."
+          # Azure Blob Storage에서 미디어 파일 목록 가져오기
+          # 필요한 정보만 추출하여 BLOB 변수에 할당 (jq 사용으로 더 안정적)
+          az storage blob list \
+            --account-name  "$AZ_ACCOUNT" \
+            --account-key   "$AZ_STORAGE_KEY" \
+            --container-name "$AZ_CONTAINER" \
+            --output json | jq -r '.[].name' | while read BLOB; do
 
-            if [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]]; then
+            # MP4, MOV, M4A, WAV 파일만 필터링
+            if [[ "$BLOB" =~ \.(mp4|mov|m4a|wav|mpg|avi|wmv|webm|flv|ts|3gpp|3gp|asf)$ ]]; then # 지원되는 확장자 추가
               VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
-              echo "• Indexing $VIDEO_URL"
+              VIDEO_NAME=$(basename "$BLOB")
+              
+              echo "• Indexing '$VIDEO_NAME' from '$VIDEO_URL'"
               az rest --method post \
-                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
-                --headers "Content-Type:application/json" \
-                --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
+                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos?accessToken=$ACCESS_TOKEN&name=$VIDEO_NAME&videoUrl=$VIDEO_URL&indexingPreset=Default" \
                 --output none
-              sleep 2
+              
+              sleep 2 # API 호출 간 지연 (레이트 제한 방지)
             fi
           done
 
@@ -101,7 +120,9 @@ jobs:
         env:
           VI_LOCATION:    ${{ secrets.VI_LOCATION }}
           VI_ACCOUNT_ID:  ${{ secrets.VI_ACCOUNT_ID }}
-          VI_API_KEY:     ${{ secrets.VI_API_KEY }}
+          # VI_API_KEY는 더 이상 직접 사용되지 않음. 대신 AZURE_CREDENTIALS 권한 사용
           AZ_ACCOUNT:     ${{ secrets.AZ_ACCOUNT }}
           AZ_STORAGE_KEY: ${{ secrets.AZ_STORAGE_KEY }}
           AZ_CONTAINER:   ${{ secrets.AZ_CONTAINER }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }} # 새롭게 필요
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }} # 새롭게 필요
