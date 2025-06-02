@@ -38,7 +38,7 @@ jobs:
       if: steps.run_fetch.outcome == 'success' && hashFiles('data/**/*') != ''
       uses: actions/upload-artifact@v4
       with:
-        name: bodycambundle
+        name: bodycam-bundle
         path: data/**/*
         compression-level: 0      # 대용량 업로드 속도 향상
         retention-days: 14
