@@ -1,0 +1,27 @@
+name: Build and Upload Bodycam Bundle
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build bodycam bundle
+        run: |
+          # 예: 번들을 생성하거나 압축하는 작업
+          mkdir -p bundle
+          echo "샘플 바디캠 번들 파일" > bundle/sample.txt
+          zip -r bodycam-bundle.zip bundle/
+
+      - name: Upload bodycam-bundle artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: bodycam-bundle       # ← 여기 이름이 다운로드 워크플로와 정확히 일치해야 함.
+          path: bodycam-bundle.zip
