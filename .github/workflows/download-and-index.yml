@@ -1,26 +1,33 @@
+# .github/workflows/download-and-index.yml
 name: Download and Index Bodycam Bundle
 
 permissions:
-  actions: read      # 아티팩트를 읽기 위해 필요합니다.
+  actions: read
   contents: read
 
 on:
-  # 1) 수동 실행
+  # 1) 수동 실행 (run_id 입력 필요)
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'daily-bodycam-fetch 워크플로우의 Run ID'
+        required: true
+        type: string
 
-  # 2) daily-bodycam-fetch 워크플로가 성공 완료될 때 자동 실행
+  # 2) "daily-bodycam-fetch" 워크플로우가 성공 완료될 때 자동 실행
   workflow_run:
-    workflows: ["daily-bodycam-fetch"]   # 정확히 fetch.yml에 정의된 name과 일치해야 합니다.
+    workflows: ["daily-bodycam-fetch"]   # 정확히 fetch.yml의 name과 일치해야 함
     types: [completed]
 
 jobs:
   download-and-index:
-    # workflow_run인 경우, 성공(conclusion == 'success')에서만 실행
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' }}
-    # 단, 수동(workflow_dispatch)이면 위 조건을 무시하고 바로 실행
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
-
     runs-on: ubuntu-24.04
+
+    # 수동(dispatch)이거나, workflow_run에 의해 트리거 됐고 “성공”인 경우에만 실행
+    if: ${{ 
+      github.event_name == 'workflow_dispatch' || 
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') 
+    }}
 
     steps:
       - name: Checkout repository
@@ -32,15 +39,19 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: false
 
-      # ── daily-bodycam-fetch에서 업로드된 아티팩트 다운로드 ────────────────────
-      - name: Download Artifacts
+      - name: Download bodycam-bundle artifact
         uses: actions/download-artifact@v4
         with:
-          run-id:       ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.inputs.run_id }}
-          name:         bodycam-bundle
-          path:         ./downloaded_data
+          # workflow_run 이벤트라면 해당 이벤트의 run ID를,
+          # 아니면 수동 입력값을 사용
+          run-id: ${{ 
+            github.event_name == 'workflow_run' 
+              && github.event.workflow_run.id 
+              || github.inputs.run_id 
+          }}
+          name: bodycam-bundle
+          path: ./downloaded_data
           github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }}
-      # ────────────────────────────────────────────────────────────────────────
 
       - name: Upload to Azure Blob if files exist
         run: |
