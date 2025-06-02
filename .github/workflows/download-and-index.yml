@@ -5,7 +5,7 @@ permissions:
   contents: read
 
 on:
-  # 1) 수동 실행 (run_id 입력이 있어야 버튼 노출)
+  # 1) 수동 실행 (Run workflow 버튼)
   workflow_dispatch:
     inputs:
       run_id:
@@ -13,18 +13,18 @@ on:
         required: true
         type: string
 
-  # 2) daily-bodycam-fetch 워크플로우가 성공 완료되면 자동 실행
+  # 2) daily-bodycam-fetch 워크플로우 완료 시 자동 실행
   workflow_run:
-    workflows: 
-      - daily-bodycam-fetch        # ↔ fetch.yml 파일의 `name:`과 정확히 일치해야 함
-    types: 
+    workflows:
+      - daily-bodycam-fetch        # ← fetch.yml 상단의 name: 과 똑같이 작성
+    types:
       - completed
 
 jobs:
   download-and-index:
     runs-on: ubuntu-24.04
 
-    # 수동이거나, workflow_run이고 그 결과가 성공이면 실행
+    # 수동으로 실행되거나, workflow_run 이벤트이고 성공(conclusion == 'success')일 때만 실행
     if: ${{ 
       github.event_name == 'workflow_dispatch' || 
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') 
@@ -43,11 +43,8 @@ jobs:
       - name: Download bodycam-bundle artifact
         uses: actions/download-artifact@v4
         with:
-          run-id: ${{ 
-            github.event_name == 'workflow_run' 
-              && github.event.workflow_run.id 
-              || github.inputs.run_id 
-          }}
+          # workflow_run 이벤트이면 그 run의 id, 아니면 수동 입력(run_id)을 사용
+          run-id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.inputs.run_id }}
           name: bodycam-bundle
           path: ./downloaded_data
           github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }}
