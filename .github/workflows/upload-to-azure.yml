@@ -1,87 +1,92 @@
-name: Upload and Index
+name: Download and Index Bodycam Bundle
 
 on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: 'Run ID that contains the bodycam-bundle artifact'
+        description: 'bodycam-bundle 아티팩트를 업로드한 워크플로의 Run ID'
         required: true
         type: string
 
 jobs:
-  upload-and-index:
+  download-and-index:
     runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Azure login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-        enable-AzPSSession: false
+      - name: Azure login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: false
 
-    # --- 여기부터 핵심 수정 블록 ---
-    - name: Download bodycam-bundle artifact
-      uses: actions/download-artifact@v4
-      with:
-        run-id: ${{ inputs.run_id }}
-        name:  bodycam-bundle      # ← 반드시!
-        path:  ./downloaded_data
-    # --- 여기까지 ---
+      # ─── 다운로드 스텝 ─────────────────────────────────────────────────────
+      - name: Download bodycam-bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}    # ← 여기에 bodycam-bundle이 올라간 “업로드 워크플로”의 run_id를 입력해야 함
+          name:     bodycam-bundle        # ← 업로드 시 지정한 아티팩트 이름과 정확히 일치해야 함
+          path:     ./downloaded_data
+      # ──────────────────────────────────────────────────────────────────────
 
-    - name: Upload to Azure Blob if files exist
-      run: |
-        if [ -d "./downloaded_data" ] && [ "$(ls -A downloaded_data)" ]; then
-          az storage blob upload-batch \
-            --account-name   "$AZ_ACCOUNT" \
-            --account-key    "$AZ_STORAGE_KEY" \
-            --destination    "$AZ_CONTAINER" \
-            --source         "./downloaded_data" \
-            --if-none-match="*"
-          echo "▶ Blob 업로드 완료"
-        else
-          echo "▶ 다운로드된 artifact가 없습니다. 업로드를 건너뜁니다."
-        fi
-      env:
-        AZ_ACCOUNT:      ${{ secrets.AZ_ACCOUNT }}
-        AZ_STORAGE_KEY:  ${{ secrets.AZ_STORAGE_KEY }}
-        AZ_CONTAINER:    ${{ secrets.AZ_CONTAINER }}
-
-    - name: Send each media file to Video Indexer
-      run: |
-        if [ ! -d "./downloaded_data" ] || [ -z "$(ls -A downloaded_data)" ]; then
-          echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜁니다."
-          exit 0
-        fi
-
-        ACCESS_TOKEN=$(az rest --method get \
-          --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
-          --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
-          --output tsv)
-
-        for BLOB in $(az storage blob list \
-            --account-name   "$AZ_ACCOUNT" \
-            --account-key    "$AZ_STORAGE_KEY" \
-            --container-name "$AZ_CONTAINER" \
-            --output tsv | cut -f1); do
-
-          if [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]]; then
-            VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
-            echo "• Indexing $VIDEO_URL"
-            az rest --method post \
-              --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
-              --headers "Content-Type:application/json" \
-              --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
-              --output none
-            sleep 2
+      - name: Upload to Azure Blob if files exist
+        run: |
+          if [ -d "./downloaded_data" ] && [ "$(ls -A downloaded_data)" ]; then
+            az storage blob upload-batch \
+              --account-name   "$AZ_ACCOUNT" \
+              --account-key    "$AZ_STORAGE_KEY" \
+              --destination    "$AZ_CONTAINER" \
+              --source         "./downloaded_data" \
+              --if-none-match="*"
+            echo "▶ Blob 업로드 완료"
+          else
+            echo "▶ 다운로드된 artifact가 없습니다. 업로드를 건너뜁니다."
           fi
-        done
-        echo "▶ Video Indexer 요청 완료"
-      env:
-        VI_LOCATION:     ${{ secrets.VI_LOCATION }}
-        VI_ACCOUNT_ID:   ${{ secrets.VI_ACCOUNT_ID }}
-        VI_API_KEY:      ${{ secrets.VI_API_KEY }}
-        AZ_ACCOUNT:      ${{ secrets.AZ_ACCOUNT }}
-        AZ_STORAGE_KEY:  ${{ secrets.AZ_STORAGE_KEY }}
-        AZ_CONTAINER:    ${{ secrets.AZ_CONTAINER }}
+        env:
+          AZ_ACCOUNT:     ${{ secrets.AZ_ACCOUNT }}
+          AZ_STORAGE_KEY: ${{ secrets.AZ_STORAGE_KEY }}
+          AZ_CONTAINER:   ${{ secrets.AZ_CONTAINER }}
+
+      - name: Send each media file to Video Indexer
+        run: |
+          # 다운로드된 파일이 없으면 바로 종료
+          if [ ! -d "./downloaded_data" ] || [ -z "$(ls -A downloaded_data)" ]; then
+            echo "▶ 업로드할 파일이 없으므로 Video Indexer 요청도 건너뜁니다."
+            exit 0
+          fi
+
+          # 1) Video Indexer AccessToken 요청
+          ACCESS_TOKEN=$(az rest --method get \
+            --uri "https://api.videoindexer.ai/Auth/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/AccessToken?allowEdit=true" \
+            --headers "Ocp-Apim-Subscription-Key:$VI_API_KEY" \
+            --output tsv)
+
+          # 2) Azure Blob Storage에 있는 모든 파일 중 확장자가 mp4/mov/m4a/wav인 것만 순회하며 인덱싱 요청
+          for BLOB in $(az storage blob list \
+              --account-name   "$AZ_ACCOUNT" \
+              --account-key    "$AZ_STORAGE_KEY" \
+              --container-name "$AZ_CONTAINER" \
+              --output tsv | cut -f1); do
+
+            if [[ $BLOB =~ \.(mp4|mov|m4a|wav)$ ]]; then
+              VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
+              echo "• Indexing $VIDEO_URL"
+              az rest --method post \
+                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos" \
+                --headers "Content-Type:application/json" \
+                --body "{\"accessToken\":\"$ACCESS_TOKEN\",\"name\":\"$(basename "$BLOB")\",\"videoUrl\":\"$VIDEO_URL\"}" \
+                --output none
+              sleep 2
+            fi
+          done
+
+          echo "▶ Video Indexer 요청 완료"
+        env:
+          VI_LOCATION:    ${{ secrets.VI_LOCATION }}
+          VI_ACCOUNT_ID:  ${{ secrets.VI_ACCOUNT_ID }}
+          VI_API_KEY:     ${{ secrets.VI_API_KEY }}
+          AZ_ACCOUNT:     ${{ secrets.AZ_ACCOUNT }}
+          AZ_STORAGE_KEY: ${{ secrets.AZ_STORAGE_KEY }}
+          AZ_CONTAINER:   ${{ secrets.AZ_CONTAINER }}
