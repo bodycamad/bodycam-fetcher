@@ -2,17 +2,25 @@
 name: Download and Index Bodycam Bundle
 
 permissions:
-  actions: read      # 아티팩트를 읽기 위해 반드시 필요합니다.
+  actions: read      # 아티팩트를 읽기 위해 필요합니다.
   contents: read
 
 on:
+  # 1) 수동 실행
+  workflow_dispatch:
+
+  # 2) daily-bodycam-fetch 워크플로가 성공 완료될 때 자동 실행
   workflow_run:
-    workflows: ["daily-bodycam-fetch"]   # ← 정확히 fetch.yml에 정의된 name과 일치시킵니다.
+    workflows: ["daily-bodycam-fetch"]   # 정확히 fetch.yml에 정의된 name과 일치해야 합니다.
     types: [completed]
 
 jobs:
   download-and-index:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # workflow_run인 경우, 성공(conclusion == 'success')에서만 실행
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' }}
+    # 단, 수동(workflow_dispatch)이면 위 조건을 무시하고 바로 실행
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+
     runs-on: ubuntu-24.04
 
     steps:
@@ -25,15 +33,15 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: false
 
-      # ── “daily-bodycam-fetch” 워크플로에서 업로드된 아티팩트 다운로드 ───────────────────────
+      # ── daily-bodycam-fetch에서 업로드된 아티팩트 다운로드 ────────────────────
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          run-id:       ${{ github.event.workflow_run.id }}    # daily-bodycam-fetch의 run_id
-          name:         bodycam-bundle                          # daily-bodycam-fetch에서 upload-artifact에 지정한 이름
+          run-id:       ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.inputs.run_id }}
+          name:         bodycam-bundle
           path:         ./downloaded_data
-          github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }}    # 반드시 actions:read 권한이 있는 토큰
-      # ────────────────────────────────────────────────────────────────────────────────────
+          github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }}
+      # ────────────────────────────────────────────────────────────────────────
 
       - name: Upload to Azure Blob if files exist
         run: |
