@@ -113,7 +113,10 @@ def safe_execute(req, retries: int = 3):
 
 
 def video_ids_from_playlist(pl_id: str) -> List[Tuple[str, str]]:
-    """playlistItems → 48 h 이내 (videoId, title) 목록"""
+    """
+    playlistItems → 48 h 이내 (videoId, title) 목록.
+    만약 'playlist not found(404)' 에러가 발생하면 빈 리스트를 반환하고 경고 로그를 남깁니다.
+    """
     vids: List[Tuple[str, str]] = []
     req = yt.playlistItems().list(
         part="contentDetails,snippet",
@@ -121,7 +124,17 @@ def video_ids_from_playlist(pl_id: str) -> List[Tuple[str, str]]:
         maxResults=50,
     )
     while req:
-        res = safe_execute(req)
+        try:
+            res = safe_execute(req)
+        except HttpError as e:
+            status = getattr(e.resp, "status", None)
+            # 404인 경우(재생목록이 없거나 접근 불가), 건너뛰고 빈 목록 반환
+            if status == 404:
+                logging.warning("플레이리스트를 찾을 수 없습니다: %s (404)", pl_id)
+                return []  # 빈 리스트 반환 → handle_playlist 에서 "새 영상 없음" 으로 처리됨
+            # 그 외 오류는 그대로 상위로 던집니다.
+            raise
+
         for it in res.get("items", []):
             title = it["snippet"]["title"]
             if title in ("Private video", "Deleted video"):
@@ -134,6 +147,7 @@ def video_ids_from_playlist(pl_id: str) -> List[Tuple[str, str]]:
             dt_obj = dt.datetime.fromisoformat(dt_raw.replace("Z", "+00:00"))
             if dt_obj >= THRESHOLD_DT:
                 vids.append((it["contentDetails"]["videoId"], title))
+
         req = yt.playlistItems().list_next(req, res)
     return vids
 
