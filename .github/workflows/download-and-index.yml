@@ -45,7 +45,7 @@ jobs:
           run-id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || github.inputs.run_id }}
           name: bodycam-bundle
           path: ./downloaded_data
-          token: ${{ secrets.TOKEN_GITHUB_ACTIONS }} 
+          github-token: ${{ secrets.TOKEN_GITHUB_ACTIONS }} 
 
       - name: Install jq for JSON parsing
         run: sudo apt-get update && sudo apt-get install -y jq
