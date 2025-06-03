@@ -77,10 +77,9 @@ jobs:
           fi
 
           echo "Getting Video Indexer access token..."
-          # Video Indexer Access Token 획득 (Azure Resource Manager 기반)
           ACCESS_TOKEN=$(az rest --method post \
             --uri "https://management.azure.com/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}/providers/Microsoft.VideoIndexer/accounts/$VI_ACCOUNT_ID/generateAccessToken?api-version=2025-01-01" \
-            --headers "Content-Type:application/json" \
+            --headers "Content-Type=application/json" \
             --body '{"permissionType":"Contributor","scope":"Account"}' \
             --output json | jq -r '.accessToken')
           
@@ -91,16 +90,13 @@ jobs:
           echo "Access token obtained."
 
           echo "Listing blobs from Azure storage and sending to Video Indexer..."
-          # Azure Blob Storage에서 미디어 파일 목록 가져오기
-          # 필요한 정보만 추출하여 BLOB 변수에 할당 (jq 사용으로 더 안정적)
           az storage blob list \
             --account-name  "$AZ_ACCOUNT" \
             --account-key   "$AZ_STORAGE_KEY" \
             --container-name "$AZ_CONTAINER" \
             --output json | jq -r '.[].name' | while read BLOB; do
 
-            # MP4, MOV, M4A, WAV 파일만 필터링
-            if [[ "$BLOB" =~ \.(mp4|mov|m4a|wav|mpg|avi|wmv|webm|flv|ts|3gpp|3gp|asf)$ ]]; then # 지원되는 확장자 추가
+            if [[ "$BLOB" =~ \.(mp4|mov|m4a|wav|mpg|avi|wmv|webm|flv|ts|3gpp|3gp|asf)$ ]]; then
               VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
               VIDEO_NAME=$(basename "$BLOB")
               
@@ -109,7 +105,7 @@ jobs:
                 --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos?accessToken=$ACCESS_TOKEN&name=$VIDEO_NAME&videoUrl=$VIDEO_URL&indexingPreset=Default" \
                 --output none
               
-              sleep 2 # API 호출 간 지연 (레이트 제한 방지)
+              sleep 2
             fi
           done
 
@@ -117,9 +113,9 @@ jobs:
         env:
           VI_LOCATION:    ${{ secrets.VI_LOCATION }}
           VI_ACCOUNT_ID:  ${{ secrets.VI_ACCOUNT_ID }}
-          # VI_API_KEY는 더 이상 직접 사용되지 않음. 대신 AZURE_CREDENTIALS 권한 사용
           AZ_ACCOUNT:     ${{ secrets.AZ_ACCOUNT }}
           AZ_STORAGE_KEY: ${{ secrets.AZ_STORAGE_KEY }}
           AZ_CONTAINER:   ${{ secrets.AZ_CONTAINER }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }} # 새롭게 필요
-          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }} # 새롭게 필요
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
