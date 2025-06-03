@@ -3,7 +3,6 @@ name: Download and Index Bodycam Bundle
 permissions:
   actions: read
   contents: read
-  artifacts: read # Artifact 다운로드에 필요
 
 on:
   # 1) 수동 실행 (Run workflow 버튼)
