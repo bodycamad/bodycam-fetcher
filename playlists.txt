@@ -2,7 +2,6 @@ PLr9FxwFTJ7qBVqHji__4I3GSa7K2KdpHQ# New York City Police Department -NYPD FID Bo
 PLW5iqZEagvjMvmXRnBaYqozLYwmzUO2B9# Los Angeles Police Department -Critical Incident Community Briefings
 PLDYaXhKcg7F01b8wfZOgUShu2cXGUm-it# Los Angeles County Sheriff's Department -Critical Incident Briefings
 PLFNuct3MvVGbOhxJpV2VaUpgFU917_K80# Phoenix Police Department -Critical Incident Briefings
-PL-QTDRxUK2k77GWxAO7xLnc7w9n8dOGLF# Atlanta Police Department -Social Media Archive
 PL-QTDRxUK2k6kVbgv9kh6N9o06x8IIskX# Atlanta Police Department -Crime Videos
 PLuq7n34T9dhOxnyWD4EA13To2F-6u99VB# San Diego County Sheriff's Office -Critical Incident Videos
 PLlz9aZOJamjasE80k8yiQKPf4PkUbeGgU# Riverside County Sheriff's Office -Critical Incidents
