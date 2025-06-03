@@ -139,7 +139,6 @@ def video_ids_from_playlist(pl_id: str) -> List[Tuple[str, str]]:
 
 
 def fetch_and_save(video_id: str, out_dir: pathlib.Path):
-    """yt-dlp 다운로드 래퍼"""
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "yt-dlp",
@@ -157,22 +156,23 @@ def fetch_and_save(video_id: str, out_dir: pathlib.Path):
         str(out_dir / "downloaded.txt"),
         "-o",
         str(out_dir / "%(upload_date)s_%(id)s.%(ext)s"),
-        "--no-warnings",
-        "--ignore-errors",
     ]
     if USE_COOKIES:
         cmd[1:1] = ["--cookies", COOKIES_FILE]
 
     try:
-        subprocess.run(
+        # 로그를 상세히 보기 위해 stdout/stderr를 기록
+        result = subprocess.run(
             cmd,
             check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
+            capture_output=True,  # run 결과를 캡처
+            text=True,
         )
         logging.info("✓ 다운로드 완료: %s", video_id)
+        logging.debug("yt-dlp stdout: %s", result.stdout)
     except subprocess.CalledProcessError as e:
         logging.error("✗ yt-dlp 실패 (%s): %s", e.returncode, video_id)
+        logging.error("yt-dlp stderr: %s", e.stderr)  # 에러 메시지 남김
 
 
 def handle_playlist(pl_id: str, keywords: List[str]) -> int:
