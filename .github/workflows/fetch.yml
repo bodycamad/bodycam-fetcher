@@ -25,9 +25,12 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: Install deps
+      run: |
+        pip install --upgrade yt-dlp google-api-python-client
+
     - name: Install yt-dlp
       run: pip install --upgrade yt-dlp
-
 
     - name: Run fetch script
       id: run_fetch
