@@ -24,12 +24,10 @@ on:
 jobs:
   download-and-index:
     runs-on: ubuntu-24.04
-
-    # 수동으로 실행되거나, workflow_run 이벤트이고 성공(conclusion == 'success')일 때만 실행
-    if: ${{
+    if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-    }}
+
 
     steps:
       - name: Checkout repository
