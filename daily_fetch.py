@@ -82,11 +82,12 @@ def read_playlists(path: str = "playlists.txt") -> List[str]:
     p = pathlib.Path(path)
     if not p.exists():
         return []
-    return [
-        l.split("#", 1)[0].strip()
-        for l in p.read_text(encoding="utf-8").splitlines()
-        if l.strip()
-    ]
+    res: List[str] = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            res.append(line)
+    return res
 
 
 def safe_execute(req, retries: int = 3):
