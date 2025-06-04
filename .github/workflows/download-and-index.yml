@@ -79,11 +79,11 @@ jobs:
           echo "Getting Video Indexer access token..."
           echo "Subscription ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}"
           echo "Resource Group: ${{ secrets.AZURE_RESOURCE_GROUP }}"
-          echo "VI Account ID: ${{ secrets.VI_ACCOUNT_ID }}"
+          echo "VI Account Name: ${{ secrets.VI_ACCOUNT_Name }}"
           echo "Attempting to generate token with API version: 2025-04-01" # 사용한 API 버전 명시
 
           ACCESS_TOKEN=$(az rest --method post \
-            --uri "https://management.azure.com/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}/providers/Microsoft.VideoIndexer/accounts/${{ secrets.VI_ACCOUNT_ID }}/generateAccessToken?api-version=2025-04-01" \
+            --uri "https://management.azure.com/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}/providers/Microsoft.VideoIndexer/accounts/${{ secrets.VI_ACCOUNT_Name }}/generateAccessToken?api-version=2025-04-01" \
             --body '{"permissionType":"Contributor","scope":"Account"}' \
             --query accessToken --output tsv --debug)
           
@@ -116,6 +116,7 @@ jobs:
           echo "▶ Video Indexer 요청 완료"
         env:
           VI_LOCATION:    ${{ secrets.VI_LOCATION }}
+          VI_ACCOUNT_NAME: ${{ secrets.VI_ACCOUNT_NAME }}
           VI_ACCOUNT_ID:  ${{ secrets.VI_ACCOUNT_ID }}
           AZ_ACCOUNT:     ${{ secrets.AZ_ACCOUNT }}
           AZ_STORAGE_KEY: ${{ secrets.AZ_STORAGE_KEY }}
