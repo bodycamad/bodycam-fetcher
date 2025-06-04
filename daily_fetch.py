@@ -19,7 +19,6 @@ import re
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple
 
 from googleapiclient.discovery import build
@@ -177,8 +176,13 @@ def video_ids_from_playlist(pl_id: str) -> List[Tuple[str, str]]:
     return vids
 
 
-def fetch_and_save(video_id: str, out_dir: pathlib.Path):
+def fetch_and_save(video_id: str, out_dir: pathlib.Path, desc: str, index: int) -> str:
+    """Download one video and rename files.
+
+    Returns the new basename (without extension) used for the files.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
+
     cmd = [
         "yt-dlp",
         f"https://www.youtube.com/watch?v={video_id}",
@@ -196,22 +200,38 @@ def fetch_and_save(video_id: str, out_dir: pathlib.Path):
         "-o",
         str(out_dir / "%(upload_date)s_%(id)s.%(ext)s"),
     ]
+
     if USE_COOKIES:
         cmd[1:1] = ["--cookies", COOKIES_FILE]
 
     try:
-        # 로그를 상세히 보기 위해 stdout/stderr를 기록
         result = subprocess.run(
             cmd,
             check=True,
-            capture_output=True,  # run 결과를 캡처
+            capture_output=True,
             text=True,
         )
-        logging.info("✓ 다운로드 완료: %s", video_id)
         logging.debug("yt-dlp stdout: %s", result.stdout)
     except subprocess.CalledProcessError as e:
         logging.error("✗ yt-dlp 실패 (%s): %s", e.returncode, video_id)
-        logging.error("yt-dlp stderr: %s", e.stderr)  # 에러 메시지 남김
+        logging.error("yt-dlp stderr: %s", e.stderr)
+        return video_id
+
+    # yt-dlp output 파일 이름: <upload_date>_<id>.<ext>
+    mp4_path = next(out_dir.glob(f"*_{video_id}.mp4"), None)
+    if not mp4_path:
+        logging.error("다운로드한 파일을 찾을 수 없습니다: %s", video_id)
+        return video_id
+
+    upload_date = mp4_path.stem.split("_", 1)[0]
+    old_base = f"{upload_date}_{video_id}"
+    new_base = f"{upload_date}_{desc}_{index}"
+
+    for path in out_dir.glob(f"{old_base}.*"):
+        suffix = "".join(path.suffixes)
+        path.rename(out_dir / f"{new_base}{suffix}")
+
+    return new_base
 
 
 def handle_playlist(pl_id: str, keywords: List[str], desc: str) -> int:
@@ -230,11 +250,10 @@ def handle_playlist(pl_id: str, keywords: List[str], desc: str) -> int:
 
     logging.info("[%s] 새 영상 %d개", desc, len(videos))
 
-    # 병렬 다운로드 (network-bound → 4~8 스레드면 충분)
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        futures = [ex.submit(fetch_and_save, vid, out_dir) for vid, _ in videos]
-        for _ in as_completed(futures):
-            pass
+    for idx, (vid, _) in enumerate(videos, start=1):
+        new_name = fetch_and_save(vid, out_dir, desc, idx)
+        logging.info("✓ 다운로드 완료: %s", new_name)
+
     return len(videos)
 
 
