@@ -115,10 +115,14 @@ jobs:
 
               VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB?$SAS"
               VIDEO_NAME=$(basename "$BLOB")
+
+              ENCODED_URL=$(printf '%s' "$VIDEO_URL" | jq -sRr @uri)
+              ENCODED_TOKEN=$(printf '%s' "$ACCESS_TOKEN" | jq -sRr @uri)
               
               echo "• Indexing '$VIDEO_NAME' from '$VIDEO_URL'"
               az rest --method post \
-                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos?accessToken=$ACCESS_TOKEN&name=$VIDEO_NAME&videoUrl=$VIDEO_URL&indexingPreset=Default" \
+                --uri "https://api.videoindexer.ai/$VI_LOCATION/Accounts/$VI_ACCOUNT_ID/Videos?accessToken=$ENCODED_TOKEN&name=$VIDEO_NAME&videoUrl=$ENCODED_URL&indexingPreset=Default" \
+                --skip-authorization-header \
                 --output none
               
               sleep 2
