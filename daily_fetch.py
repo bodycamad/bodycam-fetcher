@@ -113,6 +113,11 @@ def read_playlists(path: str = "playlists.txt") -> List[Tuple[str, str]]:
 
     return res
 
+
+def sanitize_filename(name: str) -> str:
+    """Replace characters that are unsafe for filenames."""
+    return re.sub(r'[\\/:*?"<>|]', "_", name)
+
 def safe_execute(req, retries: int = 3):
     """YouTube API 호출 + 간단 재시도 로직"""
     for attempt in range(retries):
@@ -236,7 +241,7 @@ def fetch_and_save(video_id: str, out_dir: pathlib.Path, desc: str, index: int) 
 
 def handle_playlist(pl_id: str, keywords: List[str], desc: str) -> int:
     """재생목록 하나 처리 → 다운로드 개수 반환"""
-    out_dir = pathlib.Path("data") / pl_id
+    out_dir = pathlib.Path("data") / sanitize_filename(desc)
     videos = video_ids_from_playlist(pl_id)
 
     # 키워드 필터 (제목 정규식 OR 매칭)
