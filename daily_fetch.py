@@ -77,18 +77,15 @@ def parse_channels_file(path: str = "channels.txt") -> List[Tuple[str, List[str]
 
     return res
 
-
 def read_playlists(path: str = "playlists.txt") -> List[str]:
     p = pathlib.Path(path)
     if not p.exists():
         return []
     return [
-        cleaned
-        for cleaned in (l.split("#", 1)[0].strip() for l in lines)
-        if cleaned
+        l.split("#", 1)[0].strip()
+        for l in p.read_text(encoding="utf-8").splitlines()
+        if l.strip()
     ]
-
-
 
 def safe_execute(req, retries: int = 3):
     """YouTube API 호출 + 간단 재시도 로직"""
