@@ -52,40 +52,67 @@ def to_upload_playlist_id(cid: str) -> str:
     return "UU" + cid[2:] if cid.startswith("UC") and len(cid) == 24 else cid[:24]
 
 
-def parse_channels_file(path: str = "channels.txt") -> List[Tuple[str, List[str]]]:
-    res: List[Tuple[str, List[str]]] = []
+def parse_channels_file(
+    path: str = "channels.txt",
+) -> List[Tuple[str, List[str], str]]:
+    """channels.txt 파싱 → (playlist_id, keywords, 설명) 목록"""
+    res: List[Tuple[str, List[str], str]] = []
     p = pathlib.Path(path)
     if not p.exists():
         return res
 
     for raw in p.read_text(encoding="utf-8").splitlines():
-        raw = raw.split("#", 1)[0].strip()
-        if not raw:
+        line = raw.strip()
+        if not line:
             continue
 
-        if ">>" in raw:
-            cid_part, kw_part = raw.split(">>", 1)
+        if "#" in line:
+            data_part, desc = line.split("#", 1)
+            desc = desc.strip()
+        else:
+            data_part, desc = line, ""
+
+        data_part = data_part.strip()
+        if not data_part:
+            continue
+
+        if ">>" in data_part:
+            cid_part, kw_part = data_part.split(">>", 1)
             keywords = [k.strip() for k in kw_part.split(",") if k.strip()]
         else:
-            cid_part, keywords = raw, []
+            cid_part, keywords = data_part, []
 
         pl_id = to_upload_playlist_id(cid_part.strip())
         if len(pl_id) == 24:
-            res.append((pl_id, keywords))
+            res.append((pl_id, keywords, desc or pl_id))
         else:
             logging.warning("잘못된 ID 무시: %s", pl_id)
 
     return res
 
-def read_playlists(path: str = "playlists.txt") -> List[str]:
+def read_playlists(path: str = "playlists.txt") -> List[Tuple[str, str]]:
+    """playlists.txt 파싱 → (playlist_id, 설명) 목록"""
     p = pathlib.Path(path)
     if not p.exists():
         return []
-    return [
-        l.split("#", 1)[0].strip()
-        for l in p.read_text(encoding="utf-8").splitlines()
-        if l.strip()
-    ]
+
+    res: List[Tuple[str, str]] = []
+    for raw in p.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+
+        if "#" in line:
+            pl_id, desc = line.split("#", 1)
+            pl_id = pl_id.strip()
+            desc = desc.strip()
+        else:
+            pl_id, desc = line, line
+
+        if pl_id:
+            res.append((pl_id, desc))
+
+    return res
 
 def safe_execute(req, retries: int = 3):
     """YouTube API 호출 + 간단 재시도 로직"""
@@ -187,7 +214,7 @@ def fetch_and_save(video_id: str, out_dir: pathlib.Path):
         logging.error("yt-dlp stderr: %s", e.stderr)  # 에러 메시지 남김
 
 
-def handle_playlist(pl_id: str, keywords: List[str]) -> int:
+def handle_playlist(pl_id: str, keywords: List[str], desc: str) -> int:
     """재생목록 하나 처리 → 다운로드 개수 반환"""
     out_dir = pathlib.Path("data") / pl_id
     videos = video_ids_from_playlist(pl_id)
@@ -198,10 +225,10 @@ def handle_playlist(pl_id: str, keywords: List[str]) -> int:
         videos = [(vid, t) for vid, t in videos if pattern.search(t)]
 
     if not videos:
-        logging.info("[%s] 새 영상 없음", pl_id)
+        logging.info("[%s] 새 영상 없음", desc)
         return 0
 
-    logging.info("[%s] 새 영상 %d개", pl_id, len(videos))
+    logging.info("[%s] 새 영상 %d개", desc, len(videos))
 
     # 병렬 다운로드 (network-bound → 4~8 스레드면 충분)
     with ThreadPoolExecutor(max_workers=4) as ex:
@@ -214,11 +241,11 @@ def handle_playlist(pl_id: str, keywords: List[str]) -> int:
 # ────────────── Main ───────────────────────────────────────────
 def main():
     total = 0
-    for pl_id, kws in parse_channels_file():
-        total += handle_playlist(pl_id, kws)
+    for pl_id, kws, desc in parse_channels_file():
+        total += handle_playlist(pl_id, kws, desc)
 
-    for pl_id in read_playlists():
-        total += handle_playlist(pl_id, [])
+    for pl_id, desc in read_playlists():
+        total += handle_playlist(pl_id, [], desc)
 
     logging.info("작업 완료 — 총 %d개 영상 처리", total)
 
