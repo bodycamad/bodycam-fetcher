@@ -102,7 +102,18 @@ jobs:
             --output json | jq -r '.[].name' | while read BLOB; do
 
             if [[ "$BLOB" =~ \.(mp4|mov|m4a|wav|mpg|avi|wmv|webm|flv|ts|3gpp|3gp|asf)$ ]]; then
-              VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB"
+              # Generate a short-lived SAS token so Video Indexer can access the blob
+              EXPIRY=$(date -u -d "+2 hours" +"%Y-%m-%dT%H:%MZ")
+              SAS=$(az storage blob generate-sas \
+                --account-name "$AZ_ACCOUNT" \
+                --account-key "$AZ_STORAGE_KEY" \
+                --container-name "$AZ_CONTAINER" \
+                --name "$BLOB" \
+                --permissions r \
+                --expiry "$EXPIRY" \
+                --output tsv)
+
+              VIDEO_URL="https://$AZ_ACCOUNT.blob.core.windows.net/$AZ_CONTAINER/$BLOB?$SAS"
               VIDEO_NAME=$(basename "$BLOB")
               
               echo "• Indexing '$VIDEO_NAME' from '$VIDEO_URL'"
