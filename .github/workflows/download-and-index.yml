@@ -80,6 +80,7 @@ jobs:
           echo "Subscription ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}"
           echo "Resource Group: ${{ secrets.AZURE_RESOURCE_GROUP }}"
           echo "VI Account Name: ${{ secrets.VI_ACCOUNT_Name }}"
+          echo "VI Account ID: ${{ secrets.VI_ACCOUNT_ID }}"
           echo "Attempting to generate token with API version: 2025-04-01" # 사용한 API 버전 명시
 
           ACCESS_TOKEN=$(az rest --method post \
