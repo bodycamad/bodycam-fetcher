@@ -1,26 +1,39 @@
-UCpeNXxzH1oRTWK9JOap1PyQ   # Dallas PD
-UCQKgBZFuqIfUHlvroG24XSg   # Salt Lake City PD
-UC3-Sd7y6-2eKzSLfS3e-Xdw >> Critical Incident   # San Antonio PD
-UCrWfcbyAnbNbhp19VjI2kIQ >> Officer Involved Shooting   # Milwaukee PD
-UCXNsZVK6rs6smjQFoAvn-tw >> Officer Involved Shooting   # Portland PD
-UCYfSYwxMuScjXOUcBE6d5AQ   # San Jose PD
-UCLoFeIaIBe4ZjEpy_pU1reA >> camera, audio   # Austin PD
-UCyem5SCjQd9mboYdrRyMT9w >> bwc   # Minneapolis PD
-UCYmo67-J81Ntn3PsF8h1HkQ >> Critical Incident   # Anchorage PD
-UC7GY6TMThbQJqeorxApNw3A >> bwc   # Washington DC Metropolitan PD
-UC3aN-2jYviSsfe9GyMJm3-A >> Involved   # Baltimore PD
-UCmzeK2lzaBSAQQr2Q0hPArw >> Division   # San Diego PD
-UC19Ipd-a76SABWau32gb-GA >> bwc   # Fairfax County PD
-UCMjsQu41fpYJGNmyJp2R-0g >> Critical Incident   # San Bernardino SO
-UCbQjhc6o-sKhDH2RsUJt7Bw >> Officer-Involved Shooting, Body Worn Camera, Footage   # Nashville PD
-UCVOD46fxilD7Az4lJilQ-3w >> Body Camera, Body Worn Camera, Officer-Involved Shooting, Officer Involved, body cam, OIS   # louisville PD
-UCxm_XB7V2hgNJwVtu6ZShRg >> 2025-   # Sacramento PD
-UC6547e-x50KWl7FGnr9-fVg >> Significant Event   # Colorado Springs PD
-UCtJGVOn0CecOhtJN6CZzHOg >> Body Worn Camera   # Raleigh PD
-UCmnz0apVJDqsw8CcU05jKpw >> Officer-involved Shooting   # Tulsa PD
-UCQwoaxMx9WOAZxTsVFqdOJA >> Officer Involved   # Bakersfield PD
-UCskL91dOTb10vDZqRRRAJPA >> Well Done Wednesday   # Wichita PD
-UCZLVThA2WJ65zuqjCcddmTA >> ois   # Tampa PD
-UC8lD9u4fiDcM5hxAgzZ_CGA >> Officer-Involved Shooting   # New Orleans PD
-UCJkc1COQO0WiZ2CI7dRdwAQ >> body-Worn Camera, body cam, body-cam, Footage   # Cleveland PD
-UCb1mUJLQnS2mn0HQW7P6r0Q >> Critical Incident   # Henderson PD
+UCpeNXxzH1oRTWK9JOap1PyQ # Dallas PD
+UCQKgBZFuqIfUHlvroG24XSg # Salt Lake City PD
+UC3-Sd7y6-2eKzSLfS3e-Xdw >> Critical Incident # San Antonio PD
+UCrWfcbyAnbNbhp19VjI2kIQ >> Officer Involved Shooting # Milwaukee PD
+UCXNsZVK6rs6smjQFoAvn-tw >> Officer Involved Shooting # Portland PD
+UCYfSYwxMuScjXOUcBE6d5AQ # San Jose PD
+UCLoFeIaIBe4ZjEpy_pU1reA >> camera, audio # Austin PD
+UCyem5SCjQd9mboYdrRyMT9w >> bwc # Minneapolis PD
+UCYmo67-J81Ntn3PsF8h1HkQ >> Critical Incident # Anchorage PD
+UC7GY6TMThbQJqeorxApNw3A >> bwc # Washington DC Metropolitan PD
+UC3aN-2jYviSsfe9GyMJm3-A >> Involved # Baltimore PD
+UCmzeK2lzaBSAQQr2Q0hPArw >> Division # San Diego PD
+UC19Ipd-a76SABWau32gb-GA >> bwc # Fairfax County PD
+UCMjsQu41fpYJGNmyJp2R-0g >> Critical Incident # San Bernardino SO
+UCbQjhc6o-sKhDH2RsUJt7Bw >> Officer-Involved Shooting, Body Worn Camera, Footage # Nashville PD
+UCVOD46fxilD7Az4lJilQ-3w >> Body Camera, Body Worn Camera, Officer-Involved Shooting, Officer Involved, body cam, OIS # louisville PD
+UCxm_XB7V2hgNJwVtu6ZShRg >> 2025- # Sacramento PD
+UC6547e-x50KWl7FGnr9-fVg >> Significant Event # Colorado Springs PD
+UCtJGVOn0CecOhtJN6CZzHOg >> Body Worn Camera # Raleigh PD
+UCmnz0apVJDqsw8CcU05jKpw >> Officer-involved Shooting # Tulsa PD
+UCQwoaxMx9WOAZxTsVFqdOJA >> Officer Involved # Bakersfield PD
+UCskL91dOTb10vDZqRRRAJPA >> Well Done Wednesday # Wichita PD
+UCZLVThA2WJ65zuqjCcddmTA >> ois # Tampa PD
+UC8lD9u4fiDcM5hxAgzZ_CGA >> Officer-Involved Shooting # New Orleans PD
+UCJkc1COQO0WiZ2CI7dRdwAQ >> body-Worn Camera, body cam, body-cam, Footage # Cleveland PD
+UCb1mUJLQnS2mn0HQW7P6r0Q >> Critical Incident # Henderson PD
+UC_yRgkQ_-1FLP2a03s66R6A >> Critical Incident # Irvine PD
+UCgOeHxgrTWazB9DeweAks7A >> ois # Toledo PD
+UC6u9e0wa_uPlkMg_uMn4hOA >> Involved Shooting, Road Video # Greensboro PD
+UCvGD2a080LH0HS9AKovSJ0Q >> Critical Incident # Buffalo PD
+UCYnpt7m1D7RVGX3xS9lJrmA >> Critical Incident # Reno PD
+UC_-4yxmINZ-vZdJyvb80Gzg >> Involved # Fremont PD
+UCjvnoJkcgIpbeaoVOaLkA4A >> Critical Incident # Richmond PD
+UCME-xxoXqZJTlRsG6FaXqgg >> Critical Incident, ois # Boise PD
+UC3ZVVWTNmLHkS2Q9Vxqk96w >> Involved, Body-Worn, Camera Footage  # Birmingham PD
+UCkZGb_DLYjSEM4_tgv0IODw >> ois, bwc # Rochester PD
+UCEDBdUouJlLL4XYcmJXRh5g>> Critical Incident, Involved Shooting # Modesto PD
+UC4AZF9TwZ-Mqys8F9MwjeYg # Fontana PD
+UCtxhwXo7OgeCvhRFHRcsw6A >> Critical Incident # Oxnard PD
