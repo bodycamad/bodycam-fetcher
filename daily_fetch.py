@@ -230,7 +230,21 @@ def fetch_and_save(video_id: str, out_dir: pathlib.Path, desc: str, index: int) 
 
     upload_date = mp4_path.stem.split("_", 1)[0]
     old_base = f"{upload_date}_{video_id}"
-    new_base = f"{upload_date}_{desc}_{index}"
+
+    # sanitize description for safe filenames and limit total length
+    sanitized_desc = sanitize_filename(desc)
+    MAX_NAME_LEN = 80  # Azure Video Indexer name limit including extension
+    allowed = (
+        MAX_NAME_LEN
+        - len(".mp4")
+        - len(upload_date)
+        - len(str(index))
+        - 2
+    )
+    if len(sanitized_desc) > allowed:
+        sanitized_desc = sanitized_desc[:allowed]
+
+    new_base = f"{upload_date}_{sanitized_desc}_{index}"
 
     for path in out_dir.glob(f"{old_base}.*"):
         suffix = "".join(path.suffixes)
