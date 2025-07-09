@@ -6,7 +6,7 @@ YouTube Body-Cam Fetcher
     ↳ UC… → UU…(업로드 재생목록)로 바꿔 playlistItems 호출
 ● playlists.txt ─ 재생목록 ID 한 줄씩
 ────────────────────────────────────────────────────────────────────
-최근 24 h 영상만 · Private/Deleted 제외 · 키워드 필터 · 중복 다운로드 방지
+최근 120 h 영상만 · Private/Deleted 제외 · 키워드 필터 · 중복 다운로드 방지
 """
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ if not API_KEY:
     raise EnvironmentError("환경 변수 YT_API_KEY 가 설정되어 있지 않습니다.")
 yt = build("youtube", "v3", developerKey=API_KEY, cache_discovery=False)
 
-# ────────────── 2. 24 h 시간 경계 ───────────────────────────────
+# ────────────── 2. 120 h 시간 경계 ──────────────────────────────
 UTC = dt.timezone.utc
-THRESHOLD_DT = dt.datetime.now(UTC) - dt.timedelta(hours=24)
+THRESHOLD_DT = dt.datetime.now(UTC) - dt.timedelta(hours=120)
 
 # ────────────── 3. Cookie 파일(선택) ───────────────────────────
 COOKIES_FILE = os.getenv("YT_COOKIES_FILE", "cookies.txt")
@@ -143,7 +143,7 @@ def safe_execute(req, retries: int = 3):
 
 def video_ids_from_playlist(pl_id: str) -> List[Tuple[str, str]]:
     """
-    playlistItems → 24 h 이내 (videoId, title) 목록.
+    playlistItems → 120 h 이내 (videoId, title) 목록.
     만약 'playlist not found(404)' 에러가 발생하면 빈 리스트를 반환하고 경고 로그를 남깁니다.
     """
     vids: List[Tuple[str, str]] = []
